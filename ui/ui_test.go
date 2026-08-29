@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/edimarlnx/tui-tools/pkg/theme"
+	"github.com/tui-tools/tui-kit/theme"
 )
 
 // testTheme builds a color-free theme so assertions compare plain text.

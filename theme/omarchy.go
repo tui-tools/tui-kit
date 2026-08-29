@@ -1,48 +1,19 @@
 package theme
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/tui-tools/tui-kit/internal/kv"
 )
 
 // OmarchyColorsPath is the file Omarchy symlinks to the active theme palette.
 const OmarchyColorsPath = "~/.config/omarchy/current/theme/colors.toml"
 
 var hexRe = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
-
-// parseColorsTOML reads the tiny subset of TOML used by Omarchy palettes:
-// top-level `key = "value"` pairs, `#` comments and blank lines. Anything else
-// (tables, arrays, multi-line strings) is ignored on purpose, so an exotic
-// theme file degrades to the defaults instead of failing the whole tool.
-func parseColorsTOML(r *bufio.Scanner) map[string]string {
-	out := map[string]string{}
-	for r.Scan() {
-		line := strings.TrimSpace(r.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		// Drop a trailing inline comment when the value is quoted.
-		if i := strings.LastIndex(value, `"`); i > 0 {
-			value = value[:i+1]
-		}
-		value = strings.Trim(value, `"'`)
-		if key == "" || value == "" {
-			continue
-		}
-		out[key] = value
-	}
-	return out
-}
 
 // paletteFromKeys maps Omarchy color keys onto our palette, keeping the
 // caller-supplied base for anything the theme file does not define.
@@ -78,28 +49,15 @@ func paletteFromKeys(name string, keys map[string]string, base Palette) Palette 
 	return p
 }
 
-// expandHome turns a leading "~" into the user home directory.
-func expandHome(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, strings.TrimPrefix(path, "~"))
-	}
-	return path
-}
-
 // LoadPaletteFile reads an Omarchy-style colors.toml from disk.
 func LoadPaletteFile(path string) (Palette, error) {
-	full := expandHome(path)
-	f, err := os.Open(full) //nolint:gosec // the path comes from the user's own config
+	full := kv.ExpandHome(path)
+	// Lenient parsing: an exotic theme file should degrade to the defaults,
+	// never take the tool down.
+	keys, err := kv.ReadFile(full, false)
 	if err != nil {
 		return Palette{}, fmt.Errorf("theme: open %s: %w", full, err)
 	}
-	defer func() { _ = f.Close() }()
-
-	keys := parseColorsTOML(bufio.NewScanner(f))
 	if len(keys) == 0 {
 		return Palette{}, fmt.Errorf("theme: %s has no usable color keys", full)
 	}

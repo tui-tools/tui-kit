@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/edimarlnx/tui-tools/pkg/theme"
+	"github.com/tui-tools/tui-kit/theme"
 )
 
 // Confirm is a yes/no dialog that previews the exact command about to run.

@@ -1,0 +1,26 @@
+name: Bug report
+description: Something the kit gets wrong
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: |
+        What you called, what you expected, what you got. A failing test case
+        is the fastest possible report.
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Versions
+      description: The tui-kit version, the Go version, and your distribution.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      render: shell

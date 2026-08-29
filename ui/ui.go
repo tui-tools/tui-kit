@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/edimarlnx/tui-tools/pkg/theme"
+	"github.com/tui-tools/tui-kit/theme"
 )
 
 // Ellipsis is appended to values truncated to fit a column.
