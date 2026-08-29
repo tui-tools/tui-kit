@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/tui-tools/tui-kit/theme"
 )
 
@@ -231,5 +232,75 @@ func keyMsg(name string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)}
+	}
+}
+
+func TestTableRowsNeverExceedTheGivenWidth(t *testing.T) {
+	// A row wider than the terminal wraps, and a wrapped row desynchronises
+	// Bubble Tea's line accounting: every frame after it lands in the wrong
+	// place. The layout must therefore fit inside the row style's padding.
+	tm := theme.FromPalette(theme.TokyoNight())
+
+	tests := []struct {
+		name    string
+		columns []Column
+		width   int
+	}{
+		{
+			name: "flexible columns absorbing the slack",
+			columns: []Column{
+				{Title: "UNIT", Width: 28, Flex: true},
+				{Title: "ACTIVE", Width: 8},
+				{Title: "SUB", Width: 8},
+				{Title: "AT BOOT", Width: 9},
+				{Title: "DESCRIPTION", Width: 24, Flex: true},
+			},
+			width: 104,
+		},
+		{
+			name: "two flexible columns",
+			columns: []Column{
+				{Title: "NEXT", Width: 12},
+				{Title: "LAST", Width: 12},
+				{Title: "TIMER", Width: 24, Flex: true},
+				{Title: "ACTIVATES", Width: 24, Flex: true},
+			},
+			width: 104,
+		},
+		{
+			name: "columns wider than the terminal are shrunk",
+			columns: []Column{
+				{Title: "A", Width: 40, Flex: true},
+				{Title: "B", Width: 40, Flex: true},
+				{Title: "C", Width: 40},
+			},
+			width: 60,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			row := make([]string, len(tc.columns))
+			for i := range row {
+				row[i] = strings.Repeat("x", 60)
+			}
+			table := Table{
+				Columns: tc.columns,
+				Rows:    [][]string{row, row},
+				// -1 selects nothing, so the selected style cannot mask a
+				// width bug in the ordinary row style.
+				Selected: -1,
+				Height:   4,
+			}
+			for _, width := range []int{tc.width, tc.width - 1, tc.width + 13} {
+				rendered := table.Render(tm, width)
+				for i, line := range strings.Split(rendered, "\n") {
+					if got := lipgloss.Width(line); got > width {
+						t.Errorf("width %d: line %d is %d cells wide",
+							width, i, got)
+					}
+				}
+			}
+		})
 	}
 }

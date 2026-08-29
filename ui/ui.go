@@ -239,8 +239,15 @@ func (tb Table) layout(width int) []int {
 }
 
 // Render draws the table, including its header row.
+//
+// The columns are laid out against the row style's content width, not the full
+// terminal width. Rows are drawn through a padded style, so laying out against
+// the full width overflows every row by exactly the padding, and a wrapped row
+// does more than look wrong: it desynchronises Bubble Tea's line accounting, so
+// every frame after it is drawn in the wrong place.
 func (tb Table) Render(t theme.Theme, width int) string {
-	widths := tb.layout(width)
+	inner := max(width-t.Row.GetHorizontalFrameSize(), 1)
+	widths := tb.layout(inner)
 
 	var head []string
 	for i, c := range tb.Columns {
