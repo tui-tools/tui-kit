@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tui-tools/tui-kit/main/schema/tool.schema.json",
+  "title": "tui-tools tool manifest",
+  "description": "The tool.json every tui-tools repository carries at its root. It is the single source the family website reads to build a tool's card and detail page.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "binary",
+    "tagline",
+    "description",
+    "category",
+    "homepage",
+    "repo",
+    "license",
+    "platforms",
+    "icon",
+    "install",
+    "security",
+    "maintainers",
+    "since"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the manifest was written against.",
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "description": "The tool name, which is also the repository name: tui-<target>, no aliases.",
+      "type": "string",
+      "pattern": "^tui-[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "binary": {
+      "description": "The installed executable. Same as name for every tool in the family.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "tagline": {
+      "description": "One line for the marketplace card. No trailing period.",
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 80
+    },
+    "description": {
+      "description": "A short paragraph or two for the detail page. A safe subset of markdown: paragraphs, `code`, **bold**, _italic_ and [links](url). No headings, no images, no HTML.",
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 1200
+    },
+    "category": {
+      "description": "The single shelf this tool sits on in the marketplace grid.",
+      "type": "string",
+      "enum": [
+        "firewall",
+        "systemd",
+        "network",
+        "storage",
+        "packages",
+        "containers",
+        "processes",
+        "security",
+        "hardware",
+        "logs",
+        "library",
+        "template",
+        "other"
+      ]
+    },
+    "homepage": {
+      "description": "Where a human should be sent to read about the tool.",
+      "type": "string",
+      "format": "uri"
+    },
+    "repo": {
+      "description": "The GitHub repository, https form.",
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://github\\.com/[^/]+/[^/]+$"
+    },
+    "license": {
+      "description": "SPDX identifier.",
+      "type": "string",
+      "minLength": 2
+    },
+    "platforms": {
+      "description": "The os/arch pairs a release ships binaries for.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(linux|darwin|freebsd|windows)/(amd64|arm64|arm|386)$"
+      }
+    },
+    "icon": {
+      "description": "Repository-relative path to the tool icon, preferably SVG.",
+      "type": "string",
+      "pattern": "^[^/][^\\s]*\\.(svg|png)$"
+    },
+    "logo": {
+      "description": "Repository-relative path to the horizontal lockup, optional.",
+      "type": "string",
+      "pattern": "^[^/][^\\s]*\\.(svg|png)$"
+    },
+    "screenshots": {
+      "description": "Ordered gallery. The first one is the card thumbnail, so make it the opening screen.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "caption"],
+        "properties": {
+          "path": {
+            "description": "Repository-relative path to the image.",
+            "type": "string",
+            "pattern": "^[^/][^\\s]*\\.(png|webp|gif)$"
+          },
+          "caption": {
+            "description": "Alt text and gallery caption. Describe what the frame shows.",
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "keys": {
+      "description": "The shortcuts worth advertising, not the full help screen.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "action"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24
+          },
+          "action": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 90
+          }
+        }
+      }
+    },
+    "install": {
+      "description": "How to get the tool, one entry per package manager. Every entry carries a real command even when `available` is false: a channel that is not published yet is shown as coming soon, with the command it will be, rather than hidden.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "pacman": { "$ref": "#/$defs/installMethod" },
+        "aur": { "$ref": "#/$defs/installMethod" },
+        "apt": { "$ref": "#/$defs/installMethod" },
+        "dnf": { "$ref": "#/$defs/installMethod" },
+        "zypper": { "$ref": "#/$defs/installMethod" },
+        "binary": { "$ref": "#/$defs/installMethod" },
+        "source": { "$ref": "#/$defs/installMethod" }
+      }
+    },
+    "security": {
+      "description": "The promises the family makes, answered for this tool. The website renders it as a checklist, so every field is deliberate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "needs_sudo",
+        "preview_before_run",
+        "no_daemon",
+        "no_network",
+        "static_binary",
+        "signed_releases",
+        "config_paths"
+      ],
+      "properties": {
+        "needs_sudo": {
+          "description": "What the tool escalates for, in one sentence. false when it never escalates.",
+          "oneOf": [
+            { "type": "string", "minLength": 10, "maxLength": 300 },
+            { "type": "boolean", "const": false }
+          ]
+        },
+        "preview_before_run": {
+          "description": "Every mutation is shown as an exact command line and confirmed first. The family contract: it must be true.",
+          "type": "boolean",
+          "const": true
+        },
+        "no_daemon": {
+          "description": "Nothing keeps running after you quit, and nothing is installed to run later.",
+          "type": "boolean"
+        },
+        "no_network": {
+          "description": "The tool opens no network connection of its own.",
+          "type": "boolean"
+        },
+        "no_network_note": {
+          "description": "Required when no_network is false: what it talks to, and why.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 300
+        },
+        "static_binary": {
+          "description": "Released as a statically linked binary, no runtime dependencies.",
+          "type": "boolean"
+        },
+        "signed_releases": {
+          "description": "Release artifacts carry a signature beyond the SHA-256 checksums file.",
+          "type": "boolean"
+        },
+        "config_paths": {
+          "description": "Every path the tool reads or writes for its own configuration, in precedence order.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 2 }
+        }
+      },
+      "if": {
+        "properties": { "no_network": { "const": false } },
+        "required": ["no_network"]
+      },
+      "then": { "required": ["no_network_note"] }
+    },
+    "maintainers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "github": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,39}$" },
+          "url": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "since": {
+      "description": "The date the tool was first published, YYYY-MM-DD.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "keywords": {
+      "description": "Extra search terms for the website. Repository topics are a good source.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 2, "maxLength": 32 }
+    },
+    "unreleased": {
+      "description": "Set to true for a tool that deliberately has no release yet, such as the template.",
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "installMethod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "command"],
+      "properties": {
+        "available": {
+          "description": "true when the package can be installed today. false renders as \"coming soon\" — the command is still shown, so a reader knows what it will be.",
+          "type": "boolean"
+        },
+        "package": {
+          "description": "The package name in this manager's namespace, when it differs from the tool name (an AUR -bin package, say).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "repo": {
+          "description": "The repository the package comes from: a repo id for pacman/apt/dnf/zypper (\"tui-tools\"), or \"aur\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "command": {
+          "description": "The shell line a reader copies, assuming the one-time repository setup has been done. Placeholders {version} and {arch} are expanded against the latest release.",
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 600
+        },
+        "requires_repo_setup": {
+          "description": "true when the command only works after the family repository has been added — the site links to /install/ for the one-time setup.",
+          "type": "boolean"
+        },
+        "pattern": {
+          "description": "Release asset name with {version} and {arch} placeholders. The binary channel uses it to build direct download links.",
+          "type": "string",
+          "minLength": 3
+        },
+        "url": {
+          "description": "Where the package lives, or where it will.",
+          "type": "string",
+          "format": "uri"
+        },
+        "note": {
+          "description": "One line of context shown under the command.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    }
+  }
+}

@@ -16,7 +16,7 @@ import (
 This is a library, not a tool. Install it as a dependency:
 
 ```sh
-go get github.com/tui-tools/tui-kit@v0.1.1
+go get github.com/tui-tools/tui-kit@v0.1.2
 ```
 
 ## What is in it
@@ -29,8 +29,11 @@ go get github.com/tui-tools/tui-kit@v0.1.1
 | `runner` | Preview → confirm → run, including privilege escalation, timeouts and a fake for `--demo` and tests |
 
 Plus `tools/render-screenshots.py`, which renders a tool's README screenshots
-from the real binary, and `templates/`, which holds the CI workflow and the
-GoReleaser configuration a new tool starts from.
+from the real binary, `templates/`, which holds the CI workflow and the
+GoReleaser configuration a new tool starts from, and
+[`schema/tool.schema.json`](schema/tool.schema.json), the manifest every tool
+carries at its root so the family website can describe it —
+see [`docs/tool-manifest.md`](docs/tool-manifest.md).
 
 Dependencies are deliberately small: Bubble Tea, Bubbles and Lip Gloss, nothing
 else. Configuration and palette files are read by a forty-line parser rather
