@@ -16,7 +16,7 @@ import (
 This is a library, not a tool. Install it as a dependency:
 
 ```sh
-go get github.com/tui-tools/tui-kit@v0.1.0
+go get github.com/tui-tools/tui-kit@v0.1.1
 ```
 
 ## What is in it
