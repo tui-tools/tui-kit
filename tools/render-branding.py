@@ -231,6 +231,23 @@ def ribbon(color: str = BLUE) -> str:
     )
 
 
+def box(color: str = BLUE) -> str:
+    """tui-containers: a crate seen in isometric — the top face and the two
+    sides under it. A box rather than either engine's own mark, because the
+    tool drives two of them and neither logo may stand for both; and drawn as a
+    solid with three faces rather than a flat square, because the family frame
+    is already a rounded square and a second one inside it disappears."""
+    return (
+        f'<path d="M352 192 L416 228 L352 264 L288 228 Z" fill="{BG}" '
+        f'stroke="{color}" stroke-width="20" stroke-linejoin="round"/>'
+        f'<path d="M288 228 L288 296 L352 332 L352 264 Z" fill="{BG}" '
+        f'stroke="{color}" stroke-width="20" stroke-linejoin="round"/>'
+        f'<path d="M416 228 L416 296 L352 332" fill="none" '
+        f'stroke="{color}" stroke-width="20" stroke-linejoin="round" '
+        f'stroke-linecap="round"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -346,6 +363,7 @@ def main() -> int:
         "cron": clock(),
         "logs": lines(),
         "cert": ribbon(),
+        "containers": box(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -377,6 +395,7 @@ def main() -> int:
              "tui-secure": lock(), "tui-update": arrow_up(),
              "tui-disk": platter(), "tui-cron": clock(),
              "tui-cert": ribbon(),
+             "tui-containers": box(),
              "tui-logs": lines(),
              "tui-kit": cursor()}
     for name, glyph in names.items():
