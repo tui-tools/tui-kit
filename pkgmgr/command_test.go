@@ -29,8 +29,7 @@ func TestArgvTable(t *testing.T) {
 			"dnf install -y tui-firewall tui-disk",
 		}},
 		{"install", ManagerPacman, BuildInstall, []string{
-			"pacman -Sy",
-			"pacman -S --needed --noconfirm tui-firewall tui-disk",
+			"pacman -Syu --needed --noconfirm tui-firewall tui-disk",
 		}},
 		{"remove", ManagerAPT, BuildRemove, []string{
 			"apt-get remove -y tui-firewall tui-disk",
