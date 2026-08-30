@@ -33,8 +33,11 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 Plus the scripts in `tools/`: `render-screenshots.py` renders a tool's README
 screenshots from the real binary, `render-install.py` and `render-compat.py`
 generate the README sections that come from the manifest, `compat-sync.py`
-rebuilds the tested-version lists from a tool's `compat/results.jsonl`, and
-`check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
+rebuilds the tested-version lists from a tool's `compat/results.jsonl`,
+`check-nfpm.py` asserts that the .deb/.rpm/pacman metadata in a tool's
+`.goreleaser.yaml` still matches its `tool.json` — GoReleaser cannot read the
+manifest, so the description is a copy, and this is what stops the copy from
+drifting — and `check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
 tool's `internal/<backend>/`, nowhere else. `templates/` holds what a new tool
 starts from — the CI workflow, the GoReleaser configuration, the shared
 `golangci.yml` lint bar and the `dependabot.yml` that keeps its dependencies

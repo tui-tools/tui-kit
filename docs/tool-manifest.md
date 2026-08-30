@@ -57,8 +57,14 @@ renders it inside a page it already owns the typography of.
 ### `install`
 
 One entry per **package manager**, because that is how a reader installs
-things: `pacman`, `aur`, `apt`, `dnf`, `zypper`, `binary` and `source`. Every
-entry is optional and every one has the same shape:
+things: `pacman`, `aur`, `apt`, `dnf`, `zypper`, `binary` and `source`, plus
+one key that is not a channel:
+
+| Field | Meaning |
+| --- | --- |
+| `repo_url` | Base URL of the family package repository, `https://pkgs.tui.tools`. Everything the one-time setup needs hangs off it — `/install.sh`, `/pubkey.asc`, `/deb`, `/rpm`, `/arch` — so the README and the website derive the setup commands rather than each writing their own. Omit it for a tool that is never packaged. |
+
+Every channel entry is optional and every one has the same shape:
 
 ```json
 {

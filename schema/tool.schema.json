@@ -254,6 +254,12 @@
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
+        "repo_url": {
+          "description": "Base URL of the family package repository that serves the apt, dnf and pacman channels. The one-time setup is derived from it: `<repo_url>/install.sh`, `<repo_url>/pubkey.asc`, `<repo_url>/deb`, `<repo_url>/rpm`, `<repo_url>/arch`. Absent for a tool that is never packaged.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
         "pacman": { "$ref": "#/$defs/installMethod" },
         "aur": { "$ref": "#/$defs/installMethod" },
         "apt": { "$ref": "#/$defs/installMethod" },

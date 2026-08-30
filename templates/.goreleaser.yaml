@@ -1,8 +1,18 @@
 # GoReleaser template for a tui-tools tool.
 #
 # Copy this to the tool's repository root as `.goreleaser.yaml` and replace
-# every __TOOL__ with the tool name (`tui-firewall`). One repository, one
-# binary, one tag series: `git tag v0.1.0 && git push origin v0.1.0`.
+# every __TOOL__ with the tool name (`tui-firewall`) and __TAGLINE__ with the
+# manifest's `tagline`, verbatim. One repository, one binary, one tag series:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# CI runs `goreleaser release` on a v* tag and attaches the static
+# linux/amd64 and linux/arm64 archives, plus a .deb, an .rpm and a pacman
+# package per architecture, to the GitHub release.
+#
+# GoReleaser cannot read tool.json, so the description below is a copy of the
+# manifest's tagline. tui-kit/tools/check-nfpm.py asserts the two are
+# identical, and `make manifest` runs it, so the copy cannot drift.
 version: 2
 
 project_name: __TOOL__
@@ -40,6 +50,55 @@ archives:
       - LICENSE
       - README.md
       - examples/config.toml
+
+# The distribution packages. Three formats times two architectures is six
+# files per release, and they are what pkgs.tui.tools indexes into the apt,
+# dnf and pacman repositories: a tool is then installed and upgraded the way
+# everything else on the machine is.
+nfpms:
+  - id: __TOOL__
+    ids:
+      - __TOOL__
+    package_name: __TOOL__
+    formats:
+      - deb
+      - rpm
+      - archlinux
+    # Each ecosystem's own naming, so the files look native where they land:
+    # __TOOL___0.2.1_amd64.deb, __TOOL__-0.2.1.x86_64.rpm,
+    # __TOOL__-0.2.1-1-x86_64.pkg.tar.zst.
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: tui-tools
+    homepage: https://tui.tools/tools/__TOOL__/
+    maintainer: tui-tools <maintainers@tui.tools>
+    # Quoted: a tagline often contains a colon, which unquoted YAML reads as
+    # a mapping.
+    description: "__TAGLINE__"
+    license: MIT
+    # The binary belongs in the distribution's own path, not /usr/local: it
+    # arrives through the package manager, so the package manager owns it.
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/__TOOL__/README.md
+      - src: LICENSE
+        dst: /usr/share/doc/__TOOL__/LICENSE
+      - src: examples/config.toml
+        dst: /usr/share/doc/__TOOL__/config.toml
+    # The package owns the binary name, so anything else shipping the same
+    # command — an AUR -bin build, a hand-installed copy packaged locally —
+    # is a conflict rather than a silent overwrite.
+    provides:
+      - __TOOL__
+    conflicts:
+      - __TOOL__-bin
+    rpm:
+      group: Applications/System
+    archlinux:
+      pkgbase: __TOOL__
+      packager: tui-tools <maintainers@tui.tools>
 
 checksum:
   name_template: checksums.txt
