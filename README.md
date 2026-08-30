@@ -29,6 +29,7 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 | `runner` | Preview → confirm → run, including privilege escalation, timeouts and a fake for `--demo` and tests |
 | `manifest` | Reads the tool.json a tool embeds, so the manifest is the single source at runtime too |
 | `compat` | Probes the backend's version at startup, classifies it against the manifest, and answers `caps.Has("timers")` |
+| `pkgmgr` | Detects the distribution and its package manager, reports whether the tui-tools repository is configured and which `tui-*` packages are installed, and builds the install / remove / upgrade / repository-setup commands |
 
 Plus the scripts in `tools/`: `render-screenshots.py` renders a tool's README
 screenshots from the real binary, `render-install.py` and `render-compat.py`
@@ -150,6 +151,58 @@ backend := cfg.String("backend", "auto")
 Values stay untyped strings, read back with `String`, `Bool` or `Int`. An
 unknown key in a file is kept but ignored, so a newer config never breaks an
 older binary; `cfg.OneOf` rejects the values a tool does care about.
+
+## Packages: `pkgmgr`
+
+`pkgmgr` is what a launcher needs to know about the machine it was started on:
+which package manager runs here, whether the family's repository is configured,
+which `tui-*` packages are installed or available, and what exactly would be run
+to change that.
+
+```go
+pm, err := pkgmgr.New(pkgmgr.Options{SudoPrefix: []string{"sudo", "-n"}})
+status, _ := pm.RepoStatus()          // configured? which file says so?
+have, _ := pm.Installed(ctx, names)   // version per package, unprivileged
+want, _ := pm.Available(ctx, names)
+steps, _ := pm.Install([]string{"tui-firewall"})
+for _, step := range steps {
+        // ui.Confirm(pm.Preview(step)) → pm.Run(ctx, step)
+}
+```
+
+The contract, in short:
+
+- **Detection.** `Detect` returns the manager and the distribution. The binary
+  has to be there — a manager that is not installed is not this machine's
+  manager, whatever `/etc/os-release` claims — and among the ones that are, the
+  distribution decides, so an Ubuntu image carrying `rpm` is still driven by
+  apt. `apt`, `dnf` and `pacman`, with `ParseOSRelease` exported so the decision
+  table can be tested without a container per distribution.
+- **Names.** Anything that reaches an argv is validated against
+  `^tui-[a-z]+$` first. There is no builder that skips the check and no way to
+  pass a name through it, so no command in this package can be assembled from
+  input nobody looked at.
+- **Commands are values.** `Command{Argv, Privileged, Explain, Stdin}` is
+  previewed and then handed back to be run, exactly as `runner` does — the
+  command line in the dialog is the command line that runs. A read is never
+  marked privileged: listing what is installed must not raise a password
+  prompt.
+- **Repository.** `RepoStatus` reports whether `pkgs.tui.tools` is configured —
+  an apt sources file naming it, a dnf `.repo`, or a `[tui-tools]` section
+  reachable from `/etc/pacman.conf`, including through an `Include`.
+  `RepoSetup(fingerprint)` returns the steps that add it, mirroring
+  `pkgs/install.sh` and Omarchy Server's `tui-tools` addon, with the key pinned
+  by the caller's fingerprint: the returned `Setup` names the step whose output
+  must match before anything imports the key. The fingerprint is never
+  compiled in — one that lives in a library is one that cannot be rotated
+  without a release.
+- **Exec.** Nothing in `pkgmgr` starts a process. Every command is executed by
+  `runner`, which is the family's sanctioned exec site, so `check-exec.sh` stays
+  satisfied without a tool having to wrap this package in an `internal/` of its
+  own.
+- **`pkgmgr.Fake`** is the `--demo` machine: the same validation, the same
+  previews, and a catalogue that changes the way an install would change a
+  real one.
 
 ## Naming
 

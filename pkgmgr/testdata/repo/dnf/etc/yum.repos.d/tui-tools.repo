@@ -1,0 +1,5 @@
+[tui-tools]
+name=tui-tools
+baseurl=https://pkgs.tui.tools/rpm/$basearch
+enabled=1
+gpgcheck=1
