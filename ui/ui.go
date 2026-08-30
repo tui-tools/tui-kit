@@ -125,20 +125,92 @@ func HelpBar(t theme.Theme, hints []KeyHint, width int) string {
 	return t.Footer.Width(width).Render(strings.Join(parts, separator))
 }
 
-// HelpScreen renders the full key list as a bordered panel.
+// HelpScreenMinContent is the narrowest content area the help panel will use.
+// Below it the panel stops shrinking, because a one or two cell wide column of
+// text is less useful than a panel the terminal clips.
+const HelpScreenMinContent = 16
+
+// helpKeyGap separates the key column from its description.
+const helpKeyGap = "  "
+
+// HelpScreen renders the full key list as a bordered panel that fits within
+// width.
+//
+// The panel is drawn through the dialog style, which adds a border and
+// padding, so the content is laid out against width minus that frame rather
+// than against the full terminal width. Descriptions wrap onto continuation
+// lines aligned under the first one; a key column wider than half the content
+// area is truncated so the descriptions keep room to breathe.
 func HelpScreen(t theme.Theme, title string, hints []KeyHint, width int) string {
+	content := max(width-t.Dialog.GetHorizontalFrameSize(), HelpScreenMinContent)
+
 	keyWidth := 0
 	for _, h := range hints {
 		if w := lipgloss.Width(h.Key); w > keyWidth {
 			keyWidth = w
 		}
 	}
-	lines := []string{t.Title.Render(title), ""}
+	keyWidth = min(keyWidth, max(content/2, 1))
+
+	descWidth := max(content-keyWidth-lipgloss.Width(helpKeyGap), 1)
+	indent := strings.Repeat(" ", keyWidth+lipgloss.Width(helpKeyGap))
+
+	lines := []string{t.Title.Render(Truncate(title, content)), ""}
 	for _, h := range hints {
-		lines = append(lines, t.Key.Render(Pad(h.Key, keyWidth))+"  "+
-			t.KeyDesc.Render(h.Desc))
+		desc := wrap(h.Desc, descWidth)
+		lines = append(lines, t.Key.Render(Pad(h.Key, keyWidth))+helpKeyGap+
+			t.KeyDesc.Render(desc[0]))
+		for _, extra := range desc[1:] {
+			lines = append(lines, indent+t.KeyDesc.Render(extra))
+		}
 	}
 	return t.Dialog.Render(strings.Join(lines, "\n"))
+}
+
+// wrap breaks s on spaces into lines of at most width cells, hard-splitting any
+// single word that is wider than the line. It always returns at least one line,
+// so callers can index the first one.
+func wrap(s string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+	var lines []string
+	current := ""
+	for _, word := range strings.Fields(s) {
+		for lipgloss.Width(word) > width {
+			head, tail := splitAt(word, width)
+			if current != "" {
+				lines = append(lines, current)
+				current = ""
+			}
+			lines = append(lines, head)
+			word = tail
+		}
+		switch {
+		case current == "":
+			current = word
+		case lipgloss.Width(current)+1+lipgloss.Width(word) <= width:
+			current += " " + word
+		default:
+			lines = append(lines, current)
+			current = word
+		}
+	}
+	if current != "" || len(lines) == 0 {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+// splitAt cuts s into a head of at most width cells and the remaining tail.
+func splitAt(s string, width int) (head, tail string) {
+	runes := []rune(s)
+	for i := range runes {
+		if lipgloss.Width(string(runes[:i+1])) > width {
+			return string(runes[:i]), string(runes[i:])
+		}
+	}
+	return s, ""
 }
 
 // StatusKind selects the color of a status line message.

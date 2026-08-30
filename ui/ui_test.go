@@ -95,6 +95,35 @@ func TestTableNarrowWidth(t *testing.T) {
 	}
 }
 
+func TestHelpScreenFitsWidth(t *testing.T) {
+	tm := testTheme(t)
+	hints := []KeyHint{
+		{Key: "↑/↓", Desc: "move"},
+		{Key: "ctrl+shift+r", Desc: "reload the whole ruleset from disk and " +
+			"redraw every pane, discarding any pending edit"},
+		{Key: "q", Desc: "quit"},
+		{Key: "/", Desc: "filter-by-an-extremely-long-unbreakable-token-value"},
+	}
+	title := "tui-kit — an intentionally long help panel title that will not fit"
+
+	for _, width := range []int{40, 80, 200} {
+		out := HelpScreen(tm, title, hints, width)
+		if out == "" {
+			t.Fatalf("width %d rendered nothing", width)
+		}
+		for i, line := range strings.Split(out, "\n") {
+			// lipgloss.Width counts cells, ignoring the ANSI styling.
+			if w := lipgloss.Width(line); w > width {
+				t.Errorf("width %d: line %d is %d cells: %q",
+					width, i, w, line)
+			}
+		}
+		if !strings.Contains(out, "quit") {
+			t.Errorf("width %d dropped a hint description", width)
+		}
+	}
+}
+
 func TestConfirmUpdate(t *testing.T) {
 	tests := []struct {
 		key       string
