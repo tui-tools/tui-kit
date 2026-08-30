@@ -5,7 +5,8 @@ The whole family shares one frame: a rounded terminal square in Tokyo Night
 colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
 (a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
-tui-network, a head and shoulders for tui-users, a key for tui-ssh).
+tui-network, a head and shoulders for tui-users, a key for tui-ssh, a
+padlock for tui-secure).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -120,6 +121,21 @@ def person(color: str = BLUE) -> str:
     )
 
 
+def lock(color: str = BLUE) -> str:
+    """tui-secure: a closed padlock — the shackle and the body — on the
+    cursor's baseline. A padlock rather than a shield, because the shield is
+    tui-firewall's and the two must not be confused at 64 pixels; and rather
+    than a shield with a tick in it, which is the same shape again. The lock
+    is the mark of a machine closed up, which is what this tool measures."""
+    return (
+        f'<path d="M324 258 L324 232 A28 28 0 0 1 380 232 L380 258" '
+        f'fill="none" stroke="{color}" stroke-width="22" '
+        f'stroke-linecap="round"/>'
+        f'<rect x="306" y="256" width="92" height="80" rx="16" fill="{BG}" '
+        f'stroke="{color}" stroke-width="22"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -228,6 +244,7 @@ def main() -> int:
         "network": link(),
         "users": person(),
         "ssh": key(),
+        "secure": lock(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -254,7 +271,8 @@ def main() -> int:
     # light ones. `logo.svg` is the dark-background default.
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
              "tui-systemd": cog(), "tui-network": link(),
-             "tui-users": person(), "tui-ssh": key(), "tui-kit": cursor()}
+             "tui-users": person(), "tui-ssh": key(),
+             "tui-secure": lock(), "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))
