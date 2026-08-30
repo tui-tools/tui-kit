@@ -186,6 +186,21 @@ def clock(color: str = BLUE) -> str:
     )
 
 
+def lines(color: str = BLUE) -> str:
+    """tui-logs: three stacked lines of unequal length — a log, seen as the
+    shape it has on screen. Lines rather than a document outline, because the
+    outline is a rectangle and at 64 pixels the family frame is already one;
+    unequal, because three equal ones read as a hamburger menu."""
+    return (
+        f'<line x1="292" y1="212" x2="416" y2="212" stroke="{color}" '
+        f'stroke-width="26" stroke-linecap="round"/>'
+        f'<line x1="292" y1="264" x2="368" y2="264" stroke="{color}" '
+        f'stroke-width="26" stroke-linecap="round"/>'
+        f'<line x1="292" y1="316" x2="396" y2="316" stroke="{color}" '
+        f'stroke-width="26" stroke-linecap="round"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -298,6 +313,7 @@ def main() -> int:
         "update": arrow_up(),
         "disk": platter(),
         "cron": clock(),
+        "logs": lines(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -327,6 +343,7 @@ def main() -> int:
              "tui-users": person(), "tui-ssh": key(),
              "tui-secure": lock(), "tui-update": arrow_up(),
              "tui-disk": platter(), "tui-cron": clock(),
+             "tui-logs": lines(),
              "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
