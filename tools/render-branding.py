@@ -136,6 +136,23 @@ def lock(color: str = BLUE) -> str:
     )
 
 
+def arrow_up(color: str = BLUE) -> str:
+    """tui-update: an arrow rising off a bar, on the cursor's baseline. The
+    bar is what makes it an upgrade rather than a scroll: something is being
+    lifted from where it sits to a newer place. An arrow rather than the
+    circular refresh mark, because that one reads as "reload" and at 64 pixels
+    its gap closes into a plain ring."""
+    return (
+        f'<line x1="352" y1="330" x2="352" y2="204" stroke="{color}" '
+        f'stroke-width="26" stroke-linecap="round"/>'
+        f'<polyline points="308,248 352,204 396,248" fill="none" '
+        f'stroke="{color}" stroke-width="26" stroke-linecap="round" '
+        f'stroke-linejoin="round"/>'
+        f'<line x1="302" y1="356" x2="402" y2="356" stroke="{color}" '
+        f'stroke-width="24" stroke-linecap="round"/>'
+    )
+
+
 def platter(color: str = BLUE) -> str:
     """tui-disk: a stack of platters seen edge-on — two ellipses and the wall
     between them. A cylinder rather than a single disc, because one ellipse at
@@ -262,6 +279,7 @@ def main() -> int:
         "users": person(),
         "ssh": key(),
         "secure": lock(),
+        "update": arrow_up(),
         "disk": platter(),
     }
 
@@ -290,8 +308,8 @@ def main() -> int:
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
              "tui-systemd": cog(), "tui-network": link(),
              "tui-users": person(), "tui-ssh": key(),
-             "tui-secure": lock(), "tui-disk": platter(),
-             "tui-kit": cursor()}
+             "tui-secure": lock(), "tui-update": arrow_up(),
+             "tui-disk": platter(), "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))
