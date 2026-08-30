@@ -39,7 +39,7 @@ red = "#2a2a2a"
 func writeTheme(t *testing.T, dir, content string) string {
 	t.Helper()
 	themeDir := filepath.Join(t.TempDir(), dir)
-	if err := os.MkdirAll(themeDir, 0o755); err != nil {
+	if err := os.MkdirAll(themeDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(themeDir, "colors.toml")

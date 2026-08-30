@@ -39,9 +39,10 @@ rebuilds the tested-version lists from a tool's `compat/results.jsonl`,
 manifest, so the description is a copy, and this is what stops the copy from
 drifting — and `check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
 tool's `internal/<backend>/`, nowhere else. `templates/` holds what a new tool
-starts from — the CI workflow, the GoReleaser configuration, the shared
-`golangci.yml` lint bar and the `dependabot.yml` that keeps its dependencies
-current — and
+starts from — the CI workflow, the Scorecard workflow, the GoReleaser
+configuration, the shared `golangci.yml` lint bar, the `gitleaks.toml` secret
+scanning rules and the `dependabot.yml` that keeps its dependencies current —
+and
 [`schema/tool.schema.json`](schema/tool.schema.json) is the manifest every tool
 carries at its root so the family website can describe it — see
 [`docs/tool-manifest.md`](docs/tool-manifest.md) and
@@ -162,6 +163,60 @@ disambiguating.
 The family assets live in [`assets/branding/`](assets/branding) and are
 regenerated with `make branding`. See [`docs/branding.md`](docs/branding.md) for
 the colors and how to use them.
+
+## Verifying a release
+
+Every release is built by the tool's own CI workflow on a `v*` tag, and a tag
+only becomes a release once the `security` job is green. That job runs
+`govulncheck` over the code the build actually reaches, and `gitleaks` over
+both the working tree and the whole git history — a secret that was committed
+once stays reachable long after the commit that removed it. `gosec` runs a job
+earlier, inside the lint bar.
+
+What ships beside the binaries: a CycloneDX SBOM per archive, a keyless cosign
+signature over `checksums.txt`, and SLSA build provenance for every archive,
+package and the checksum file. None of it needs a key to be distributed: both
+signatures are keyless, tied to the workflow identity GitHub issued at build
+time.
+
+Downloading `tui-firewall_0.2.2_linux_amd64.tar.gz` and its `.deb`, say:
+
+```sh
+gh attestation verify tui-firewall_0.2.2_linux_amd64.tar.gz -R tui-tools/tui-firewall
+gh attestation verify tui-firewall_0.2.2_amd64.deb -R tui-tools/tui-firewall
+```
+
+That answers "was this file built by that repository's workflow". To check the
+signature over the release as a whole, take `checksums.txt` and its bundle:
+
+```sh
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp \
+    '^https://github.com/tui-tools/tui-firewall/\.github/workflows/ci\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+The identity regexp is the part that matters: it says the signature has to come
+from that repository's `ci.yml`, running on a tag. Without it, `cosign` would
+accept anything signed by anyone. Then check what you downloaded against the
+file you just verified:
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+```
+
+Replace `tui-firewall` with the tool you are verifying; everything else is the
+same for every tool in the family.
+
+Each repository also runs [OpenSSF
+Scorecard](https://github.com/ossf/scorecard) weekly and publishes the result,
+so its supply-chain posture is public. A tool's README carries it as a badge:
+
+```md
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tui-tools/tui-firewall/badge)](https://scorecard.dev/viewer/?uri=github.com/tui-tools/tui-firewall)
+```
 
 ## Development
 

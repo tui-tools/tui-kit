@@ -58,7 +58,7 @@ func Load(data []byte) (Manifest, error) {
 // LoadFile reads a manifest from disk. Tools embed theirs; this is for the
 // scripts and tests that work on a checkout.
 func LoadFile(path string) (Manifest, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // reading a caller-named file is the whole function; callers are the family's own scripts and tests
 	if err != nil {
 		return Manifest{}, fmt.Errorf("manifest: %w", err)
 	}

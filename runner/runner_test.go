@@ -18,7 +18,7 @@ func fakeBin(t *testing.T, name, script string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, name)
 	body := "#!/bin/sh\n" + script + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil { //nolint:gosec // the fake binary has to be executable, and it lives in the test's own temp dir
 		t.Fatalf("write %s: %v", path, err)
 	}
 	return dir
