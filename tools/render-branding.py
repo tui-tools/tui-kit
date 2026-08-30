@@ -6,7 +6,7 @@ colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
 (a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
 tui-network, a head and shoulders for tui-users, a key for tui-ssh, a
-padlock for tui-secure).
+padlock for tui-secure, a clock for tui-cron).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -170,6 +170,22 @@ def platter(color: str = BLUE) -> str:
     )
 
 
+def clock(color: str = BLUE) -> str:
+    """tui-cron: a clock face — the rim and two hands — on the cursor's
+    baseline. A clock rather than a calendar, because what this tool is about
+    is when a job runs next, not which day it is; and rather than an hourglass,
+    which reads as "waiting" and at 64 pixels is two triangles nobody can tell
+    apart. The hands point at ten past two so neither one lies along the rim."""
+    return (
+        f'<circle cx="352" cy="258" r="74" fill="{BG}" stroke="{color}" '
+        f'stroke-width="24"/>'
+        f'<line x1="352" y1="258" x2="352" y2="208" stroke="{color}" '
+        f'stroke-width="22" stroke-linecap="round"/>'
+        f'<line x1="352" y1="258" x2="394" y2="284" stroke="{color}" '
+        f'stroke-width="22" stroke-linecap="round"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -281,6 +297,7 @@ def main() -> int:
         "secure": lock(),
         "update": arrow_up(),
         "disk": platter(),
+        "cron": clock(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -309,7 +326,8 @@ def main() -> int:
              "tui-systemd": cog(), "tui-network": link(),
              "tui-users": person(), "tui-ssh": key(),
              "tui-secure": lock(), "tui-update": arrow_up(),
-             "tui-disk": platter(), "tui-kit": cursor()}
+             "tui-disk": platter(), "tui-cron": clock(),
+             "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))
