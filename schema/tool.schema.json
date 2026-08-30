@@ -57,6 +57,7 @@
         "firewall",
         "systemd",
         "network",
+        "ssh",
         "storage",
         "snapshots",
         "packages",
