@@ -159,7 +159,7 @@ release:
   # a description of a release: it says what was touched, not what changed for
   # somebody running the tool.
   #
-  # `.TagBody` is the annotated tag's message, so the summary is written once,
+  # `.TagContents` is the annotated tag's message, so the summary is written once,
   # where the release is actually cut:
   #
   #   git tag -a v0.3.0 -m "<what changed for a user>"
