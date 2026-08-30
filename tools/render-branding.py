@@ -4,9 +4,10 @@
 The whole family shares one frame: a rounded terminal square in Tokyo Night
 colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
-(a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
-tui-network, a head and shoulders for tui-users, a key for tui-ssh, a
-padlock for tui-secure, a clock for tui-cron, an award seal for tui-cert).
+(a shield for tui-firewall, a cog for tui-systemd, two stacked frames for
+tui-snapper, two linked nodes for tui-network, a head and shoulders for
+tui-users, a key for tui-ssh, a padlock for tui-secure, a clock for tui-cron,
+an award seal for tui-cert).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -75,6 +76,20 @@ def cog(color: str = BLUE) -> str:
         teeth
         + f'<circle cx="{cx}" cy="{cy}" r="52" fill="none" stroke="{color}" '
         f'stroke-width="26"/>'
+    )
+
+
+def frames(color: str = BLUE) -> str:
+    """tui-snapper: two rounded frames, one saved behind the other — a state
+    kept and the state that replaced it. Two rather than three, offset far
+    enough to leave a gap, because at 64 pixels a third turns the whole mark
+    into a smudge. The near frame is filled with the background so the far one
+    reads as being behind it rather than crossing it."""
+    return (
+        f'<rect x="286" y="182" width="120" height="120" rx="20" fill="none" '
+        f'stroke="{color}" stroke-width="20"/>'
+        f'<rect x="330" y="226" width="120" height="120" rx="20" fill="{BG}" '
+        f'stroke="{color}" stroke-width="26"/>'
     )
 
 
@@ -321,6 +336,7 @@ def main() -> int:
         "": cursor(),
         "firewall": shield(),
         "systemd": cog(),
+        "snapper": frames(),
         "network": link(),
         "users": person(),
         "ssh": key(),
@@ -355,7 +371,8 @@ def main() -> int:
     # Horizontal lockups, one pair per name: dark for dark READMEs, light for
     # light ones. `logo.svg` is the dark-background default.
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
-             "tui-systemd": cog(), "tui-network": link(),
+             "tui-systemd": cog(), "tui-snapper": frames(),
+             "tui-network": link(),
              "tui-users": person(), "tui-ssh": key(),
              "tui-secure": lock(), "tui-update": arrow_up(),
              "tui-disk": platter(), "tui-cron": clock(),
