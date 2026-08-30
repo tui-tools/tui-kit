@@ -136,6 +136,23 @@ def lock(color: str = BLUE) -> str:
     )
 
 
+def platter(color: str = BLUE) -> str:
+    """tui-disk: a stack of platters seen edge-on — two ellipses and the wall
+    between them. A cylinder rather than a single disc, because one ellipse at
+    64 pixels reads as a circle and every other tool in the family already has
+    one."""
+    return (
+        f'<ellipse cx="352" cy="206" rx="66" ry="26" fill="none" '
+        f'stroke="{color}" stroke-width="22"/>'
+        f'<path d="M286 206 L286 306" fill="none" stroke="{color}" '
+        f'stroke-width="22" stroke-linecap="round"/>'
+        f'<path d="M418 206 L418 306" fill="none" stroke="{color}" '
+        f'stroke-width="22" stroke-linecap="round"/>'
+        f'<path d="M286 306 C286 330 418 330 418 306" fill="none" '
+        f'stroke="{color}" stroke-width="22" stroke-linecap="round"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -245,6 +262,7 @@ def main() -> int:
         "users": person(),
         "ssh": key(),
         "secure": lock(),
+        "disk": platter(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -272,7 +290,8 @@ def main() -> int:
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
              "tui-systemd": cog(), "tui-network": link(),
              "tui-users": person(), "tui-ssh": key(),
-             "tui-secure": lock(), "tui-kit": cursor()}
+             "tui-secure": lock(), "tui-disk": platter(),
+             "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))
