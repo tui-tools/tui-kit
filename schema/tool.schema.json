@@ -58,6 +58,7 @@
         "systemd",
         "network",
         "storage",
+        "snapshots",
         "packages",
         "containers",
         "processes",
