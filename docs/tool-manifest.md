@@ -185,9 +185,12 @@ page that only lists the good answers is marketing; this one lists the answer.
 2. Point `icon` at `assets/icon.svg` and `screenshots` at the frames
    `make screenshots` renders — the same files the README embeds.
 3. Validate: `make manifest` in the template, or the `npx ajv` line above.
-4. Tag `v0.1.0`. The site picks the tool up on its next build: hourly, or
-   immediately if the release workflow dispatches
-   (see `tui-tools.github.io`'s README).
+4. Tag `v0.1.0`. The site picks the tool up on its next build, which is
+   hourly: it polls the organization rather than being woken by a release, so
+   that no tool repository has to hold a token for it. `pkgs.tui.tools` polls
+   the same way, twice a day. Either can be run by hand
+   (`gh workflow run publish.yml -R tui-tools/tui-tools.github.io`) when the
+   wait is too long.
 
 A repository without a `tool.json` is simply not listed. That is how `tui-kit`
 and the org profile stay out of the marketplace grid while living in the same
