@@ -40,9 +40,10 @@ rebuilds the tested-version lists from a tool's `compat/results.jsonl`,
 manifest, so the description is a copy, and this is what stops the copy from
 drifting — and `check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
 tool's `internal/<backend>/`, nowhere else. `templates/` holds what a new tool
-starts from — the CI workflow, the Scorecard workflow, the GoReleaser
-configuration, the shared `golangci.yml` lint bar, the `gitleaks.toml` secret
-scanning rules and the `dependabot.yml` that keeps its dependencies current —
+starts from — the CI workflow, the Scorecard and CodeQL workflows, the
+GoReleaser configuration, the shared `golangci.yml` lint bar, the
+`gitleaks.toml` secret scanning rules, the `dependabot.yml` that keeps its
+dependencies current and `FUZZING.md`, the family's rule for the parsers —
 and
 [`schema/tool.schema.json`](schema/tool.schema.json) is the manifest every tool
 carries at its root so the family website can describe it — see
@@ -279,6 +280,51 @@ make test
 make check-exec  # only runner may start a process
 make branding
 ```
+
+### Fuzzing the parsers
+
+Every package that parses command output carries at least one Go native fuzz
+test, seeded from its `testdata`. `make check` runs the seed corpus of each
+one like any other test; exploring past the seeds is something you run when
+you touch a parser:
+
+```sh
+go test -run=^$ -fuzz=FuzzParseKeyFingerprint -fuzztime=5m ./pkgmgr/
+```
+
+A crash writes its input under `testdata/fuzz/`; commit that file and it
+becomes a seed the tests replay forever. `pkgmgr/fuzz_test.go` is the worked
+example, and [`templates/FUZZING.md`](templates/FUZZING.md) is the rule the
+whole family follows, including why CI runs the seeds and not the fuzzer.
+
+### Cutting a release
+
+Tags are annotated, and the message is the release notes:
+
+```sh
+git tag -a v0.3.0 -m "What changed for somebody running the tool."
+git push origin v0.3.0
+```
+
+GoReleaser renders that message as the release header (`{{ .TagBody }}` in
+`templates/.goreleaser.yaml`) above the generated commit list, so a release
+opens with a sentence a person wrote instead of a list of subjects. A
+lightweight tag leaves the header blank, which is the reminder to go back and
+write one.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md): it covers the pull-request flow — open an
+issue first for anything larger than a fix — and the bar a change has to
+clear, which is `make check` green, a table-driven test built from real
+command output for any parsing change, and preview-then-confirm for anything
+that mutates a system. [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies to
+every interaction here.
+
+Security problems do not go in the issue tracker:
+[SECURITY.md](SECURITY.md) says how to report one privately and what response
+to expect.
 
 ## Status
 

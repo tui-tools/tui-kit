@@ -171,11 +171,18 @@ answer "what can this thing do to my machine" without opening the source.
 | `no_daemon` | Nothing keeps running after you quit, and nothing is installed to run later. |
 | `no_network` | The tool opens no network connection of its own. When `false`, `no_network_note` is required and must say what it talks to and why. |
 | `static_binary` | Released statically linked, no runtime dependencies. |
-| `signed_releases` | A signature beyond the SHA-256 `checksums.txt`. `false` today for every tool; the site says so plainly rather than hiding it. |
+| `signed_releases` | A signature beyond the SHA-256 `checksums.txt` — for this family, the keyless cosign bundle `checksums.txt.sigstore.json` that the release job attaches. Releases have carried one since the signing gate landed, so the honest value is now `true`; the manifests still say `false` and are being corrected tool by tool. |
 | `config_paths` | Every path the tool reads or writes for its own configuration, in precedence order. |
 
-`signed_releases: false` being visible on the site is on purpose. A security
-page that only lists the good answers is marketing; this one lists the answer.
+Every one of these is visible on the site on purpose. A security page that
+only lists the good answers is marketing; this one lists the answer, including
+the ones that are still `false`.
+
+`signed_releases` is the one field the site does not take the manifest's word
+for: `tools/[name].astro` and `security.astro` read the latest release's assets
+instead, and treat a `checksums.txt.sigstore.json` as the fact. Where a
+manifest and a release disagree, the release wins. Correcting the manifest is
+therefore a truthfulness fix rather than something the site is waiting on.
 
 ## Adding a manifest to a new tool
 
