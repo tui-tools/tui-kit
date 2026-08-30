@@ -7,6 +7,9 @@
 *.out
 coverage.*
 
+# Python bytecode from the shared tooling under tools/
+__pycache__/
+
 # Editor and OS noise
 .idea/
 .vscode/

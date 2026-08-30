@@ -2,7 +2,7 @@
 
 GO ?= go
 
-.PHONY: all check check-exec test vet fmt fmt-check lint tidy branding clean
+.PHONY: all check check-exec test tools-test vet fmt fmt-check lint tidy branding clean
 
 all: check
 
@@ -37,8 +37,12 @@ lint: fmt-check vet check-exec
 check-exec:
 	bash tools/check-exec.sh .
 
+## tools-test: run the tests for the shared Python tooling.
+tools-test:
+	python3 -m unittest discover -s tools/tests -p '*_test.py'
+
 ## check: everything CI runs.
-check: lint test
+check: lint test tools-test
 
 ## tidy: prune and refresh go.mod / go.sum.
 tidy:

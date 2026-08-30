@@ -57,6 +57,11 @@ jobs:
       - name: go test
         run: go test -race ./...
 
+      # The Python tooling under tools/ is shared by every tool in the family,
+      # so a break there breaks all of their screenshots at once.
+      - name: tools test
+        run: python3 -m unittest discover -s tools/tests -p '*_test.py'
+
       - name: verify go.mod is tidy
         run: |
           go mod tidy

@@ -1,0 +1,3 @@
+# Recorded terminal streams are byte-exact fixtures: a terminal writes CRLF at
+# the end of every row, and normalising it would rewrite the thing under test.
+*.ansi -text

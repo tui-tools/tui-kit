@@ -162,9 +162,31 @@ def to_html(raw: bytes) -> str:
                 r = (p[0] if p and p[0] else 1) - 1
                 c = (p[1] if len(p) > 1 and p[1] else 1) - 1
             elif cmd == "J":
-                rows = [[(" ", None)] * COLS for _ in range(ROWS)]
+                # Erase in display. The parameter matters: Bubble Tea ends a
+                # frame that is shorter than the one before it -- the frame
+                # right after a dialog closes -- by parking the cursor under
+                # the new content and sending ESC[0J to wipe the leftovers.
+                # Treating that as ESC[2J erased the frame itself and the
+                # screenshot came out blank.
+                mode = p[0] if p else 0
+                if mode == 0:
+                    for k in range(c, COLS):
+                        rows[r][k] = (" ", None)
+                    for row_index in range(r + 1, ROWS):
+                        rows[row_index] = [(" ", None)] * COLS
+                elif mode == 1:
+                    for row_index in range(0, r):
+                        rows[row_index] = [(" ", None)] * COLS
+                    for k in range(0, min(c + 1, COLS)):
+                        rows[r][k] = (" ", None)
+                else:
+                    rows = [[(" ", None)] * COLS for _ in range(ROWS)]
             elif cmd == "K":
-                for k in range(c, COLS):
+                # Erase in line, same three modes as above.
+                mode = p[0] if p else 0
+                start, stop = (c, COLS) if mode == 0 else (
+                    (0, min(c + 1, COLS)) if mode == 1 else (0, COLS))
+                for k in range(start, stop):
                     rows[r][k] = (" ", None)
             elif cmd == "A":
                 r = max(0, r - (p[0] or 1))

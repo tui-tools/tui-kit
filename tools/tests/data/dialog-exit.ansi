@@ -1,0 +1,50 @@
+[H                                                                                                        
+                                                                                                        
+                                                                                                        
+                                                                                                        
+  [38;2;121;162;247m╭───────────────────────────────────────────────────────────────────────────────────────────────────[0m  
+  [38;2;121;162;247m│[0m                                                                                                   [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;247;118;142mUpgrade 14 package(s) with dnf, 3 of them security fixes[0m                                         [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m                                                                                                   [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [38;2;192;202;245mA reboot is needed afterwards: Reboot is required to fully utilize these updates.[0m                [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [38;2;192;202;245mA pre-upgrade snapshot is taken first, and a post one after; `snapper status` between them lists [0m[38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [38;2;192;202;245mtui-update never reboots by itself.[0m                                                              [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m                                                                                                   [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [38;2;86;95;137mCommand to run:[0m                                                                                  [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;158;206;105m$ sudo -n snapper create -c root -t pre -d tui-update: before the dnf upgrade --print-number[0m     [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;158;206;105m$ sudo -n dnf makecache --refresh -q[0m                                                             [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;158;206;105m$ sudo -n dnf -y upgrade[0m                                                                         [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;158;206;105m$ sudo -n snapper create -c root -t post -d tui-update: after the dnf upgrade --print-number[0m     [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m                                                                                                   [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m  [1;38;2;224;175;104my[0m[38;2;86;95;137m confirm    [0m[1;38;2;224;175;104mn[0m[38;2;86;95;137m cancel[0m                                                                            [38;2;121;162;247m[0m  
+  [38;2;121;162;247m│[0m                                                                                                   [38;2;121;162;247m[0m  
+  [38;2;121;162;247m╰───────────────────────────────────────────────────────────────────────────────────────────────────[0m  
+                                                                                                        
+                                                                                                        
+                                                                                                        
+                                                                                                        
+                                                                                                        [26;H[H [1;38;2;121;162;247mtui-update[0m[38;2;86;95;137m  demo (in-memory sample machine, dnf)  ·  apply[0m                                             
+ [38;2;86;95;137mupdates: [0m[1;38;2;158;206;105m0 pending[0m   [38;2;86;95;137msecurity: [0m[38;2;192;202;245m0[0m   [38;2;86;95;137mrestart: [0m[1;38;2;247;118;142mreboot[0m   [38;2;86;95;137msnapshot: [0m[1;38;2;158;206;105myes (root)[0m                              
+ [38;2;192;202;245mUpgrade 14 package(s) with dnf, 3 of them security fixes[0m                                               
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245m$ sudo -n snapper create -c root -t pre -d tui-update: before the dnf upgrade --print-number[0m           
+ [38;2;192;202;245m42[0m                                                                                                     
+ [38;2;192;202;245m✓ done[0m                                                                                                 
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245m$ sudo -n dnf makecache --refresh -q[0m                                                                   
+ [38;2;192;202;245mMetadata cache created.[0m                                                                                
+ [38;2;192;202;245m✓ done[0m                                                                                                 
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245m$ sudo -n dnf -y upgrade[0m                                                                               
+ [38;2;192;202;245mUpgraded 14 packages. Complete![0m                                                                        
+ [38;2;192;202;245m✓ done[0m                                                                                                 
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245m$ sudo -n snapper create -c root -t post -d tui-update: after the dnf upgrade --print-number[0m           
+ [38;2;192;202;245m42[0m                                                                                                     
+ [38;2;192;202;245m✓ done[0m                                                                                                 
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245mThe sequence finished. A reboot is needed afterwards: Reboot is required to fully utilize these updat…[0m 
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;192;202;245m[0m                                                                                                       
+ [38;2;86;95;137m[1;38;2;224;175;104mj/k[0m [38;2;86;95;137mscroll[0m  [1;38;2;224;175;104mR[0m [38;2;86;95;137mreboot[0m  [1;38;2;224;175;104mesc[0m [38;2;86;95;137mback[0m[0m                                                                         
+ [1;38;2;158;206;105mupgrade finished[0m                                                                                       [J[25;H
