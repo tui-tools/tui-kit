@@ -120,6 +120,9 @@ type Distro struct {
 	Like []string
 	// PrettyName is the human-readable name, for a header line.
 	PrettyName string
+	// VersionID is the os-release VERSION_ID field ("42", "24.04"). A rolling
+	// release leaves it empty, which is itself the answer.
+	VersionID string
 }
 
 // String renders the distribution the way a header shows it.
@@ -167,7 +170,7 @@ func DetectDistro() Distro {
 	return ParseOSRelease(string(raw))
 }
 
-// ParseOSRelease reads the ID, ID_LIKE and PRETTY_NAME fields of an
+// ParseOSRelease reads the ID, ID_LIKE, PRETTY_NAME and VERSION_ID fields of an
 // os-release file. It is exported because the parser is what the tests can
 // hold still; the file it reads on a real machine cannot be.
 func ParseOSRelease(text string) Distro {
@@ -185,6 +188,8 @@ func ParseOSRelease(text string) Distro {
 			d.Like = strings.Fields(value)
 		case "PRETTY_NAME":
 			d.PrettyName = value
+		case "VERSION_ID":
+			d.VersionID = value
 		}
 	}
 	return d
