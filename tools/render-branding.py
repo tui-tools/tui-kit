@@ -6,7 +6,7 @@ colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
 (a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
 tui-network, a head and shoulders for tui-users, a key for tui-ssh, a
-padlock for tui-secure, a clock for tui-cron).
+padlock for tui-secure, a clock for tui-cron, an award seal for tui-cert).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -201,6 +201,21 @@ def lines(color: str = BLUE) -> str:
     )
 
 
+def ribbon(color: str = BLUE) -> str:
+    """tui-cert: an award seal and the two ribbon tails under it, on the
+    cursor's baseline. A seal rather than a sheet of paper, because a page at
+    64 pixels is an empty rectangle; rather than a padlock, which is
+    tui-secure's; and rather than a key, which is tui-ssh's. The tails are what
+    make the disc read as a certificate instead of one more circle."""
+    return (
+        f'<circle cx="352" cy="224" r="42" fill="{BG}" stroke="{color}" '
+        f'stroke-width="22"/>'
+        f'<path d="M326 262 L312 340 L352 316 L392 340 L378 262" fill="none" '
+        f'stroke="{color}" stroke-width="22" stroke-linejoin="round" '
+        f'stroke-linecap="round"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -314,6 +329,7 @@ def main() -> int:
         "disk": platter(),
         "cron": clock(),
         "logs": lines(),
+        "cert": ribbon(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -343,6 +359,7 @@ def main() -> int:
              "tui-users": person(), "tui-ssh": key(),
              "tui-secure": lock(), "tui-update": arrow_up(),
              "tui-disk": platter(), "tui-cron": clock(),
+             "tui-cert": ribbon(),
              "tui-logs": lines(),
              "tui-kit": cursor()}
     for name, glyph in names.items():

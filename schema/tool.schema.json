@@ -58,6 +58,7 @@
         "systemd",
         "network",
         "ssh",
+        "certificates",
         "storage",
         "snapshots",
         "scheduling",
