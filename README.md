@@ -35,8 +35,10 @@ screenshots from the real binary, `render-install.py` and `render-compat.py`
 generate the README sections that come from the manifest, `compat-sync.py`
 rebuilds the tested-version lists from a tool's `compat/results.jsonl`, and
 `check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
-tool's `internal/<backend>/`, nowhere else. `templates/` holds the CI workflow
-and the GoReleaser configuration a new tool starts from, and
+tool's `internal/<backend>/`, nowhere else. `templates/` holds what a new tool
+starts from — the CI workflow, the GoReleaser configuration, the shared
+`golangci.yml` lint bar and the `dependabot.yml` that keeps its dependencies
+current — and
 [`schema/tool.schema.json`](schema/tool.schema.json) is the manifest every tool
 carries at its root so the family website can describe it — see
 [`docs/tool-manifest.md`](docs/tool-manifest.md) and

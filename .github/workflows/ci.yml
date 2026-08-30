@@ -19,7 +19,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          # go.mod is the single place the family's Go version lives, so a
+          # bump there moves CI with it.
+          go-version-file: go.mod
           check-latest: true
 
       - name: gofmt
@@ -33,6 +35,13 @@ jobs:
 
       - name: go vet
         run: go vet ./...
+
+      # The family's lint bar, shared as .golangci.yml. Nothing is excluded
+      # wholesale: a deliberate finding carries a //nolint saying why.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13
 
       # The kit owns the exec boundary it asks the tools to respect: `runner`
       # is the only package here allowed to start a process.
