@@ -1,0 +1,4 @@
+package tui-disk is not installed
+tui-firewall|0.2.1-1.fc42
+tui-systemd|0.1.1-1.fc42
+tui-update|3:0.1.1-1.fc42

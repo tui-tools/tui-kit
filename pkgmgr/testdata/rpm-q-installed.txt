@@ -1,0 +1,10 @@
+bash.x86_64|5.2.37-1.fc42
+coreutils.x86_64|9.6-2.fc42
+glibc.x86_64|2.41-3.fc42
+kernel-core.x86_64|6.14.9-300.fc42
+openssh-server.x86_64|9.9p2-2.fc42
+systemd.x86_64|257.5-1.fc42
+tui-firewall.x86_64|0.2.1-1.fc42
+tui-systemd.x86_64|0.1.1-1.fc42
+tui-update.x86_64|3:0.1.1-1.fc42
+tzdata.noarch|2025b-1.fc42

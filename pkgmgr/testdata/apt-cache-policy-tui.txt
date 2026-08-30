@@ -1,0 +1,18 @@
+tui-firewall:
+  Installed: 0.2.1-1
+  Candidate: 0.2.2-1
+  Version table:
+     0.2.2-1 500
+        500 https://pkgs.tui.tools/deb stable/main amd64 Packages
+ *** 0.2.1-1 100
+        100 /var/lib/dpkg/status
+tui-disk:
+  Installed: (none)
+  Candidate: 0.1.1-1
+  Version table:
+     0.1.1-1 500
+        500 https://pkgs.tui.tools/deb stable/main amd64 Packages
+tui-nope:
+  Installed: (none)
+  Candidate: (none)
+  Version table:
