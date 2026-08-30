@@ -77,6 +77,11 @@ func TestRenderValues(t *testing.T) {
 			want: []string{"backend: ufw (version unknown)"},
 		},
 		{
+			name: "a demo backend names no version, because there is none",
+			info: Info{Backend: "ufw", Demo: true},
+			want: []string{"backend: ufw\n"},
+		},
+		{
 			name: "no backend at all",
 			info: Info{},
 			want: []string{"backend: unknown"},
@@ -84,7 +89,7 @@ func TestRenderValues(t *testing.T) {
 		{
 			name: "demo says so on its own line",
 			info: Info{Backend: "demo", Demo: true},
-			want: []string{"backend: demo", "mode: demo (sample data, the system was not read)"},
+			want: []string{"backend: demo\n", "mode: demo (sample data, the system was not read)"},
 		},
 		{
 			name: "escalation disabled",
