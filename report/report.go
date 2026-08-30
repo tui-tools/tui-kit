@@ -157,7 +157,8 @@ func fields(info Info) []Field {
 // backendLine names the backend and, when the probe read one, its version.
 // A backend whose version could not be read carries the probe's own reason
 // rather than a bare "unknown", because "ufw is not installed" and "ufw
-// printed something we could not parse" are different bugs.
+// printed something we could not parse" are different bugs. In demo mode there
+// is nothing to read a version off, so the name stands alone.
 func backendLine(info Info) string {
 	name := oneLine(info.Backend)
 	if name == "" {
@@ -165,6 +166,12 @@ func backendLine(info Info) string {
 	}
 	if v := oneLine(info.BackendVersion); v != "" {
 		return name + " " + v
+	}
+	// A fake has no version to read, and saying so would read as a failure
+	// rather than as the point of --demo. The mode line below already says the
+	// system was never touched.
+	if info.Demo {
+		return name
 	}
 	if d := oneLine(info.BackendDetail); d != "" {
 		return name + " (version unknown: " + d + ")"
