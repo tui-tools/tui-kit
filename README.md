@@ -30,6 +30,7 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 | `manifest` | Reads the tool.json a tool embeds, so the manifest is the single source at runtime too |
 | `compat` | Probes the backend's version at startup, classifies it against the manifest, and answers `caps.Has("timers")` |
 | `pkgmgr` | Detects the distribution and its package manager, reports whether the tui-tools repository is configured and which `tui-*` packages are installed, and builds the install / remove / upgrade / repository-setup commands |
+| `report` | Renders the `--report` block a bug report needs — tool and kit versions, backend, distribution, kernel, terminal, where the binary came from — with no hostname, user name, home path or address in it |
 
 Plus the scripts in `tools/`: `render-screenshots.py` renders a tool's README
 screenshots from the real binary, `render-install.py` and `render-compat.py`
@@ -43,7 +44,9 @@ tool's `internal/<backend>/`, nowhere else. `templates/` holds what a new tool
 starts from — the CI workflow, the Scorecard and CodeQL workflows, the
 GoReleaser configuration, the shared `golangci.yml` lint bar, the
 `gitleaks.toml` secret scanning rules, the `dependabot.yml` that keeps its
-dependencies current and `FUZZING.md`, the family's rule for the parsers —
+dependencies current, `FUZZING.md`, the family's rule for the parsers, and
+[`ISSUE_TEMPLATE/bug_report.yml`](templates/ISSUE_TEMPLATE/bug_report.yml), the
+bug form that asks for the `report` package's block first —
 and
 [`schema/tool.schema.json`](schema/tool.schema.json) is the manifest every tool
 carries at its root so the family website can describe it — see
