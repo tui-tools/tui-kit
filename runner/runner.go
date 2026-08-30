@@ -42,6 +42,16 @@ type Command struct {
 	// Destructive marks a command that can lock the user out or drop state,
 	// so the confirm dialog can paint itself in the danger color.
 	Destructive bool
+	// Stdin is written to the process's standard input and closed. It exists
+	// for the commands whose input must never appear in an argv — `chpasswd`
+	// reads "user:password" from stdin, `tee -a` reads the line it appends —
+	// because a command line is visible in `ps` to every user on the machine.
+	//
+	// It is deliberately absent from String and from Preview: what the confirm
+	// dialog shows is the command line, and a secret has no business being
+	// rendered anywhere. A tool that wants to say something about the input
+	// says it in the dialog's own body.
+	Stdin string
 }
 
 // String renders the command the way the user reads it in the preview.
@@ -227,6 +237,9 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool) (string
 	bin, args := r.argv(cmd, privileged)
 	c := exec.CommandContext(ctx, bin, args...) //nolint:gosec // argv is built here, never from a shell string
 	c.Env = append(os.Environ(), r.env...)
+	if cmd.Stdin != "" {
+		c.Stdin = strings.NewReader(cmd.Stdin)
+	}
 	out, err := c.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {

@@ -147,6 +147,35 @@ func TestRunCapturesOutput(t *testing.T) {
 	}
 }
 
+// TestRunFeedsStdinAndKeepsItOutOfThePreview covers the one input that must
+// never reach an argv: a password handed to `chpasswd` is visible in `ps` to
+// every user on the machine if it goes on the command line, so it goes on
+// stdin — and the preview, which is the promise the tool makes, still shows
+// only the command line.
+func TestRunFeedsStdinAndKeepsItOutOfThePreview(t *testing.T) {
+	// A shell builtin rather than `cat`: PATH holds only the fake binary.
+	dir := fakeBin(t, "toolctl", `read -r line; echo "$line"`)
+	t.Setenv("PATH", dir)
+	r, err := New(Options{Bin: "toolctl"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cmd := Command{Argv: []string{"toolctl"}, Stdin: "alice:hunter2\n"}
+	out, err := r.Run(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out != "alice:hunter2" {
+		t.Errorf("the command did not receive its stdin: %q", out)
+	}
+	if got := r.Preview(cmd); strings.Contains(got, "hunter2") {
+		t.Errorf("the preview leaked the stdin: %q", got)
+	}
+	if got := cmd.String(); strings.Contains(got, "hunter2") {
+		t.Errorf("String() leaked the stdin: %q", got)
+	}
+}
+
 func TestRunFailureNamesThePreview(t *testing.T) {
 	dir := fakeBin(t, "toolctl", `echo "not permitted" >&2; exit 1`)
 	t.Setenv("PATH", dir)

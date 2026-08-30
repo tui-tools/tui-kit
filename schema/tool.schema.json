@@ -62,6 +62,7 @@
         "packages",
         "containers",
         "processes",
+        "users",
         "security",
         "hardware",
         "logs",
@@ -156,7 +157,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "binary", "versionCommand"],
+        "required": ["name", "binary"],
         "properties": {
           "name": {
             "description": "How the backend is known to the user: \"ufw\", \"systemd\", \"snapper\".",
@@ -169,7 +170,7 @@
             "minLength": 1
           },
           "versionCommand": {
-            "description": "The argv that prints the version, argv[0] included. It is run once at startup, unprivileged, with a 2 second timeout.",
+            "description": "The argv that prints the version, argv[0] included. It is run once at startup, unprivileged, with a 2 second timeout. Omit it only for a backend whose tools print no version at all — shadow-utils is one: neither `useradd --version` nor any of its siblings exists on Arch, Debian or Fedora. The probe then reports the backend by name with no version, and every declared feature counts as present.",
             "type": "array",
             "minItems": 1,
             "items": { "type": "string", "minLength": 1 }

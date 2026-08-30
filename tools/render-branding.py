@@ -5,7 +5,7 @@ The whole family shares one frame: a rounded terminal square in Tokyo Night
 colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
 (a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
-tui-network).
+tui-network, a head and shoulders for tui-users).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -88,6 +88,19 @@ def link(color: str = BLUE) -> str:
         f'stroke-width="22"/>'
         f'<circle cx="400" cy="304" r="30" fill="{BG}" stroke="{color}" '
         f'stroke-width="22"/>'
+    )
+
+
+def person(color: str = BLUE) -> str:
+    """tui-users: one account — a head and the shoulders under it, on the
+    cursor's baseline. One figure rather than a crowd, because two heads at 64
+    pixels merge into a single blob and what the tool is about is the account
+    you are looking at."""
+    return (
+        f'<circle cx="352" cy="212" r="36" fill="{BG}" stroke="{color}" '
+        f'stroke-width="24"/>'
+        f'<path d="M292 346 C292 296 412 296 412 346" fill="none" '
+        f'stroke="{color}" stroke-width="26" stroke-linecap="round"/>'
     )
 
 
@@ -197,6 +210,7 @@ def main() -> int:
         "firewall": shield(),
         "systemd": cog(),
         "network": link(),
+        "users": person(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -222,7 +236,8 @@ def main() -> int:
     # Horizontal lockups, one pair per name: dark for dark READMEs, light for
     # light ones. `logo.svg` is the dark-background default.
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
-             "tui-systemd": cog(), "tui-network": link(), "tui-kit": cursor()}
+             "tui-systemd": cog(), "tui-network": link(),
+             "tui-users": person(), "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))

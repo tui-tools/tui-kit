@@ -65,7 +65,15 @@ def render(manifest: dict) -> str:
         lines.append("| | |")
         lines.append("| --- | --- |")
         lines.append(f"| Binary | `{backend['binary']}` |")
-        lines.append(f"| Version read with | `{' '.join(backend['versionCommand'])}` |")
+        # A backend whose tools print no version at all (shadow-utils) declares
+        # no version command, and the table says so rather than leaving a blank
+        # a reader would take for an omission.
+        version_command = backend.get("versionCommand") or []
+        lines.append(
+            f"| Version read with | `{' '.join(version_command)}` |"
+            if version_command
+            else "| Version read with | nothing: these tools report no version |"
+        )
         lines.append(f"| Minimum | {backend.get('minimum') or '—'} |")
 
         tested = backend.get("tested") or []
