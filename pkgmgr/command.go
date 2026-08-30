@@ -288,10 +288,11 @@ func BuildRefresh(manager Manager) (Command, error) {
 
 // BuildInstall builds the steps that install the named packages.
 //
-// apt and pacman are given a refresh first, because a repository that was
-// added a moment ago is invisible to both until their lists are fetched; dnf
-// refreshes an expired cache on its own. Every step is privileged, every step
-// is previewed, and the sequence stops at the first one that fails.
+// apt is given a refresh first, because a repository that was added a moment
+// ago is invisible to it until its lists are fetched; dnf refreshes an expired
+// cache on its own; pacman refreshes and upgrades in the one step Arch
+// supports. Every step is privileged, every step is previewed, and the
+// sequence stops at the first one that fails.
 func BuildInstall(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
@@ -314,12 +315,18 @@ func BuildInstall(manager Manager, names []string) ([]Command, error) {
 			Explain:    "Install " + strings.Join(names, ", "),
 		}}, nil
 	case ManagerPacman:
-		return []Command{refresh, {
+		// Not `-Sy` then `-S`: on Arch a refreshed database followed by a
+		// plain install is the partial upgrade the distribution warns
+		// against, since the new package is linked against libraries the
+		// machine has not updated. `-Syu` with the names is the supported
+		// form, and the preview shows it for what it is: an install that
+		// brings the rest of the system along.
+		return []Command{{
 			Argv: append([]string{
-				"pacman", "-S", "--needed", "--noconfirm",
+				"pacman", "-Syu", "--needed", "--noconfirm",
 			}, names...),
 			Privileged: true,
-			Explain:    "Install " + strings.Join(names, ", "),
+			Explain:    "Install " + strings.Join(names, ", ") + ", upgrading the system with them",
 		}}, nil
 	default:
 		return nil, fmt.Errorf("%w %q", errUnknownManager, manager)
