@@ -181,11 +181,14 @@ def render(manifest: dict, version: str | None, arch: str) -> str:
 
     if coming:
         lines.append("")
+        # This sits under whatever is already installable, so it can only
+        # speak about the channels below it. It used to announce that the
+        # distribution packages were unpublished, which read as a
+        # contradiction once apt, dnf and pacman were live above it.
         lines.extend(
             wrap(
-                "The distribution packages are not published yet. The commands "
-                "below are here so you know what they will be; a package "
-                "repository at `pkgs.tui.tools` is what turns them on."
+                "Not packaged for these yet; the static binary works "
+                "everywhere in the meantime."
             )
         )
         for channel in coming:
