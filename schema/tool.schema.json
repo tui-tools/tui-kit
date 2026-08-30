@@ -60,6 +60,7 @@
         "ssh",
         "certificates",
         "storage",
+        "file-sharing",
         "snapshots",
         "scheduling",
         "packages",

@@ -248,6 +248,26 @@ def box(color: str = BLUE) -> str:
     )
 
 
+def folder_link(color: str = BLUE) -> str:
+    """tui-samba: a folder with a node linked off its corner — a directory that
+    is on the network. A folder rather than a plug or a globe, because what
+    this tool is about is a directory somebody else can open; the node is
+    deliberately drawn like tui-network's, so the two read as related, and the
+    folder is what tells them apart at 64 pixels. One node rather than
+    tui-network's two, because the folder already fills the left half and a
+    second node closes the gap into a blob. It is filled with the background so
+    it sits in front of the folder rather than crossing it."""
+    return (
+        f'<path d="M288 224 L288 196 L324 196 L338 218 L392 218 L392 300 '
+        f'L288 300 Z" fill="none" stroke="{color}" stroke-width="22" '
+        f'stroke-linejoin="round"/>'
+        f'<line x1="384" y1="298" x2="404" y2="318" stroke="{color}" '
+        f'stroke-width="20" stroke-linecap="round"/>'
+        f'<circle cx="416" cy="332" r="20" fill="{BG}" stroke="{color}" '
+        f'stroke-width="20"/>'
+    )
+
+
 def icon_svg(glyph: str, bg: str = BG, accent: str = GREEN) -> str:
     """Wrap a glyph in the shared 512x512 frame."""
     return (
@@ -364,6 +384,7 @@ def main() -> int:
         "logs": lines(),
         "cert": ribbon(),
         "containers": box(),
+        "samba": folder_link(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -397,6 +418,7 @@ def main() -> int:
              "tui-cert": ribbon(),
              "tui-containers": box(),
              "tui-logs": lines(),
+             "tui-samba": folder_link(),
              "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
