@@ -4,7 +4,8 @@
 The whole family shares one frame: a rounded terminal square in Tokyo Night
 colors carrying a green prompt chevron. The family icon closes it with a blue
 cursor block; a tool icon replaces that cursor with the tool's own glyph
-(a shield for tui-firewall, a cog for tui-systemd).
+(a shield for tui-firewall, a cog for tui-systemd, two linked nodes for
+tui-network).
 
 Usage:
     tools/render-branding.py [--out assets/branding]
@@ -73,6 +74,20 @@ def cog(color: str = BLUE) -> str:
         teeth
         + f'<circle cx="{cx}" cy="{cy}" r="52" fill="none" stroke="{color}" '
         f'stroke-width="26"/>'
+    )
+
+
+def link(color: str = BLUE) -> str:
+    """tui-network: two nodes and the link between them, on the cursor's
+    baseline. Two rather than three, because at 64 pixels a third node closes
+    the gaps and the mark reads as a blob."""
+    return (
+        f'<line x1="334" y1="236" x2="378" y2="282" stroke="{color}" '
+        f'stroke-width="26" stroke-linecap="round"/>'
+        f'<circle cx="312" cy="214" r="30" fill="{BG}" stroke="{color}" '
+        f'stroke-width="22"/>'
+        f'<circle cx="400" cy="304" r="30" fill="{BG}" stroke="{color}" '
+        f'stroke-width="22"/>'
     )
 
 
@@ -181,6 +196,7 @@ def main() -> int:
         "": cursor(),
         "firewall": shield(),
         "systemd": cog(),
+        "network": link(),
     }
 
     # Square icons: the family mark and one variant per tool.
@@ -206,7 +222,7 @@ def main() -> int:
     # Horizontal lockups, one pair per name: dark for dark READMEs, light for
     # light ones. `logo.svg` is the dark-background default.
     names = {"tui-tools": cursor(), "tui-firewall": shield(),
-             "tui-systemd": cog(), "tui-kit": cursor()}
+             "tui-systemd": cog(), "tui-network": link(), "tui-kit": cursor()}
     for name, glyph in names.items():
         stem = "logo" if name == "tui-tools" else f"logo-{name.removeprefix('tui-')}"
         dark = write(f"{stem}-dark.svg", logo_svg(name, glyph, FG, None))
