@@ -159,7 +159,7 @@ release:
   # a description of a release: it says what was touched, not what changed for
   # somebody running the tool.
   #
-  # `.TagBody` is the annotated tag's message, so the summary is written once,
+  # `.TagContents` is the annotated tag's message, so the summary is written once,
   # where the release is actually cut:
   #
   #   git tag -a v0.3.0 -m "<what changed for a user>"
@@ -168,7 +168,7 @@ release:
   header: |
     ## __TOOL__ {{ .Tag }}
 
-    {{ .TagBody }}
+    {{ .TagContents }}
 
     Built by this repository's CI on the tag itself. Each archive ships a
     CycloneDX SBOM, `checksums.txt` carries a keyless cosign signature, and
