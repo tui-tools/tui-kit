@@ -2,7 +2,7 @@
 
 GO ?= go
 
-.PHONY: all check test vet fmt fmt-check lint tidy branding clean
+.PHONY: all check check-exec test vet fmt fmt-check lint tidy branding clean
 
 all: check
 
@@ -25,13 +25,17 @@ fmt-check:
 		echo "these files need gofmt:"; echo "$$out"; exit 1; \
 	fi
 
-## lint: fmt-check plus vet. golangci-lint is used when installed.
-lint: fmt-check vet
+## lint: fmt-check, vet and the exec boundary. golangci-lint when installed.
+lint: fmt-check vet check-exec
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
 		echo "golangci-lint not installed, skipping"; \
 	fi
+
+## check-exec: assert that only the runner starts a process.
+check-exec:
+	bash tools/check-exec.sh .
 
 ## check: everything CI runs.
 check: lint test

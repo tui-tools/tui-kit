@@ -27,13 +27,20 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 | `ui` | Header, table, help bar, help screen, status line, and the confirm / input / picker dialogs |
 | `config` | `/etc/<tool>/config.toml` + `~/.config/<tool>/config.toml` + environment, in that order |
 | `runner` | Preview → confirm → run, including privilege escalation, timeouts and a fake for `--demo` and tests |
+| `manifest` | Reads the tool.json a tool embeds, so the manifest is the single source at runtime too |
+| `compat` | Probes the backend's version at startup, classifies it against the manifest, and answers `caps.Has("timers")` |
 
-Plus `tools/render-screenshots.py`, which renders a tool's README screenshots
-from the real binary, `templates/`, which holds the CI workflow and the
-GoReleaser configuration a new tool starts from, and
-[`schema/tool.schema.json`](schema/tool.schema.json), the manifest every tool
-carries at its root so the family website can describe it —
-see [`docs/tool-manifest.md`](docs/tool-manifest.md).
+Plus the scripts in `tools/`: `render-screenshots.py` renders a tool's README
+screenshots from the real binary, `render-install.py` and `render-compat.py`
+generate the README sections that come from the manifest, `compat-sync.py`
+rebuilds the tested-version lists from a tool's `compat/results.jsonl`, and
+`check-exec.sh` asserts the exec boundary — `os/exec` in `runner` and in a
+tool's `internal/<backend>/`, nowhere else. `templates/` holds the CI workflow
+and the GoReleaser configuration a new tool starts from, and
+[`schema/tool.schema.json`](schema/tool.schema.json) is the manifest every tool
+carries at its root so the family website can describe it — see
+[`docs/tool-manifest.md`](docs/tool-manifest.md) and
+[`docs/compatibility.md`](docs/compatibility.md).
 
 Dependencies are deliberately small: Bubble Tea, Bubbles and Lip Gloss, nothing
 else. Configuration and palette files are read by a forty-line parser rather
@@ -154,8 +161,9 @@ the colors and how to use them.
 ## Development
 
 ```sh
-make check   # gofmt, go vet and the tests: what CI runs
+make check       # gofmt, go vet, the exec boundary and the tests: what CI runs
 make test
+make check-exec  # only runner may start a process
 make branding
 ```
 

@@ -149,6 +149,100 @@
         }
       }
     },
+    "backends": {
+      "description": "The system backends this tool drives, and what it knows about their versions. Optional: a tool that shells out to nothing declares none. The running binary reads this same block (tui-kit/compat) to probe the backend at startup and to gate version-dependent views, so the manifest is the only place a version number is written down.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "binary", "versionCommand"],
+        "properties": {
+          "name": {
+            "description": "How the backend is known to the user: \"ufw\", \"systemd\", \"snapper\".",
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "binary": {
+            "description": "The executable that is probed and driven.",
+            "type": "string",
+            "minLength": 1
+          },
+          "versionCommand": {
+            "description": "The argv that prints the version, argv[0] included. It is run once at startup, unprivileged, with a 2 second timeout.",
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "versionRegex": {
+            "description": "Optional regular expression extracting the version from that output. A capturing group is the version; without one, the whole match is. Omit it to take the first version-shaped token, which is what nearly every backend prints.",
+            "type": "string",
+            "minLength": 1
+          },
+          "minimum": {
+            "description": "The oldest version the tool claims to work with. Below it the header says so in the error colour.",
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+){0,2}([-+][0-9A-Za-z.]+)?$"
+          },
+          "tested": {
+            "description": "The versions a real run of the test suite passed against. Generated: `tui-kit/tools/compat-sync.py` rewrites it from compat/results.jsonl. Do not edit by hand.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+){0,2}([-+][0-9A-Za-z.]+)?$"
+            }
+          },
+          "searchPaths": {
+            "description": "Absolute fallbacks tried when the binary is not on PATH, for the administrative tools that live in an sbin directory.",
+            "type": "array",
+            "items": { "type": "string", "pattern": "^/" }
+          },
+          "features": {
+            "description": "Capabilities that appeared in a known backend version. The tool asks for them by name (caps.Has(\"timers\")) instead of comparing version numbers in code.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "since"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+                },
+                "since": {
+                  "description": "The first version that has it.",
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+){0,2}([-+][0-9A-Za-z.]+)?$"
+                }
+              }
+            }
+          },
+          "notes": {
+            "description": "Version-ranged caveats: what changes for the user on those versions.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["range", "impact"],
+              "properties": {
+                "range": {
+                  "description": "A simple constraint: \"<0.11\", \">=250\", \"0.36.x\", or a comma-separated list of those, all of which must hold.",
+                  "type": "string",
+                  "pattern": "^(([<>]=?|!=|==?)?[0-9xX*]+(\\.[0-9xX*]+){0,2}([-+][0-9A-Za-z.]+)?)(\\s*,\\s*([<>]=?|!=|==?)?[0-9xX*]+(\\.[0-9xX*]+){0,2}([-+][0-9A-Za-z.]+)?)*$"
+                },
+                "impact": {
+                  "description": "One sentence naming what it does to the tool, in the user's terms.",
+                  "type": "string",
+                  "minLength": 10,
+                  "maxLength": 300
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "install": {
       "description": "How to get the tool, one entry per package manager. Every entry carries a real command even when `available` is false: a channel that is not published yet is shown as coming soon, with the command it will be, rather than hidden.",
       "type": "object",

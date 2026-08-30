@@ -42,6 +42,7 @@ tool and it never drifts.
 | `logo` | no | The horizontal lockup, if the repository has one. |
 | `screenshots` | no | Ordered `{path, caption}`. **The first is the card thumbnail**, so make it the opening screen. |
 | `keys` | no | The shortcuts worth advertising as `{key, action}`, not the whole help screen. |
+| `backends` | no | The system backends the tool drives, and what it knows about their versions, see below. |
 | `install` | yes | One entry per channel, see below. |
 | `security` | yes | The family's promises, answered for this tool, see below. |
 | `maintainers` | yes | `{name, github?, url?}`. |
@@ -96,6 +97,60 @@ editing the manifest.
 The same block generates the **Install** section of the tool's README, through
 [`tools/render-install.py`](../tools/render-install.py), so the repository and
 the website never disagree about how to install the thing.
+
+### `backends`
+
+Optional, and the only block a **running binary** reads: the tool embeds its
+own `tool.json`, probes the backend at startup through
+[`tui-kit/compat`](../compat) and shows the version in its header. That is why
+the version numbers live here and not in the code — the README, the website and
+the binary would otherwise each carry their own copy.
+
+A worked example, `tui-firewall`'s:
+
+```json
+"backends": [
+  {
+    "name": "ufw",
+    "binary": "ufw",
+    "versionCommand": ["ufw", "--version"],
+    "versionRegex": "ufw ([0-9][0-9.]*)",
+    "minimum": "0.36",
+    "searchPaths": ["/usr/sbin/ufw", "/sbin/ufw"],
+    "tested": ["0.36.1", "0.36.2"],
+    "features": [
+      { "name": "numbered-status", "since": "0.31" }
+    ],
+    "notes": [
+      {
+        "range": "<0.36",
+        "impact": "`status numbered` omits the app profile column, so rules added from a profile show their ports instead of the profile name"
+      }
+    ]
+  }
+]
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | How the backend is known to the user: `ufw`, `systemd`. |
+| `binary` | yes | The executable that is probed and driven. |
+| `versionCommand` | yes | The argv that prints the version, `argv[0]` included. Run once at startup, unprivileged, with a two second timeout. |
+| `versionRegex` | no | Extracts the version from that output; a capturing group is the version. Omit it to take the first version-shaped token, which is what nearly every backend prints. |
+| `minimum` | no | The oldest version the tool claims to work with. Below it the header says so in the error colour — the tool still runs. |
+| `tested` | **generated** | The versions a real run passed against. `tui-kit/tools/compat-sync.py` rewrites it from `compat/results.jsonl`; do not edit it by hand. |
+| `searchPaths` | no | Absolute fallbacks for a binary a plain `PATH` misses, such as `/usr/sbin/ufw`. |
+| `features` | no | `{name, since}` capabilities the tool asks for by name — `caps.Has("timers")` — instead of comparing versions in code. |
+| `notes` | no | `{range, impact}`: a simple constraint (`<0.11`, `>=250`, `0.36.x`, or a comma-separated list of those) and one sentence on what changes for the user. |
+
+`minimum` is a claim about the tool, `tested` is a record of runs, and the two
+are deliberately different things: a tool can support 0.36 upwards and have
+been run against exactly two of those releases. The header tells the user which
+of the two they are in.
+
+The whole loop — where the evidence comes from, how `tested` is regenerated and
+how the README section is rendered — is
+[`docs/compatibility.md`](compatibility.md).
 
 ### `security`
 

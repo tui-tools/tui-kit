@@ -34,6 +34,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # The kit owns the exec boundary it asks the tools to respect: `runner`
+      # is the only package here allowed to start a process.
+      - name: exec boundary
+        run: bash tools/check-exec.sh .
+
       - name: go test
         run: go test -race ./...
 
