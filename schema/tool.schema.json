@@ -55,6 +55,8 @@
       "type": "string",
       "enum": [
         "firewall",
+        "router",
+        "vpn",
         "systemd",
         "network",
         "ssh",
