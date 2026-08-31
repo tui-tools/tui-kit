@@ -34,7 +34,7 @@ tool and it never drifts.
 | `binary` | yes | The installed executable. Same as `name` in this family. |
 | `tagline` | yes | One line, 80 characters at most, no trailing period. It is the card's subtitle. |
 | `description` | yes | A short paragraph or two for the detail page. |
-| `category` | yes | One shelf from the enum: `firewall`, `systemd`, `network`, `ssh`, `storage`, `file-sharing`, `snapshots`, `scheduling`, `packages`, `containers`, `processes`, `users`, `security`, `hardware`, `logs`, `library`, `template`, `other`. |
+| `category` | yes | One shelf from the enum: `firewall`, `router`, `vpn`, `systemd`, `network`, `ssh`, `certificates`, `storage`, `file-sharing`, `snapshots`, `scheduling`, `packages`, `containers`, `processes`, `users`, `security`, `hardware`, `logs`, `library`, `template`, `other`. |
 | `homepage`, `repo` | yes | URLs. `repo` must be the `https://github.com/owner/name` form. |
 | `license` | yes | SPDX identifier, `MIT` for everything here. |
 | `platforms` | yes | The `os/arch` pairs a release ships, e.g. `linux/amd64`. |
