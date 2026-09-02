@@ -157,7 +157,7 @@ func HelpScreen(t theme.Theme, title string, hints []KeyHint, width int) string 
 
 	lines := []string{t.Title.Render(Truncate(title, content)), ""}
 	for _, h := range hints {
-		desc := wrap(h.Desc, descWidth)
+		desc := Wrap(h.Desc, descWidth)
 		lines = append(lines, t.Key.Render(Pad(h.Key, keyWidth))+helpKeyGap+
 			t.KeyDesc.Render(desc[0]))
 		for _, extra := range desc[1:] {
@@ -167,37 +167,123 @@ func HelpScreen(t theme.Theme, title string, hints []KeyHint, width int) string 
 	return t.Dialog.Render(strings.Join(lines, "\n"))
 }
 
-// wrap breaks s on spaces into lines of at most width cells, hard-splitting any
-// single word that is wider than the line. It always returns at least one line,
-// so callers can index the first one.
-func wrap(s string, width int) []string {
+// Wrap breaks s on spaces into lines of at most width cells, hard-splitting any
+// single word that is wider than the line. Widths are counted in terminal
+// cells, so a CJK ideograph or an emoji costs two. It always returns at least
+// one line, so callers can index the first one.
+func Wrap(s string, width int) []string {
+	return wrapIndented(s, "", width)
+}
+
+// preIndentFor reports the continuation indent a pre-formatted line wants, and
+// whether the line is pre-formatted at all.
+//
+// Two shapes are recognised, and they are the two the family's dialogs
+// produce: a command preview starting with "$ ", and an indented block
+// starting with two spaces. Both are wrapped rather than clipped — the command
+// preview is the trust boundary of the whole family, and a command line the
+// user cannot read to its end is a command line they cannot check — but their
+// continuations are indented so the eye still sees one logical line.
+func preIndentFor(line string) (indent string, pre bool) {
+	if strings.HasPrefix(line, "$ ") {
+		return "  ", true
+	}
+	if lead := leadingSpace(line); lead != "" && strings.HasPrefix(line, "  ") {
+		return lead + "  ", true
+	}
+	return "", false
+}
+
+// leadingSpace returns the run of spaces and tabs that opens s.
+func leadingSpace(s string) string {
+	return s[:len(s)-len(strings.TrimLeft(s, " \t"))]
+}
+
+// WrapBody wraps a multi-line dialog body to width cells.
+//
+// Prose lines are word-wrapped. Pre-formatted lines — a "$ " command preview or
+// a two-space indented block — are wrapped too, with their continuations
+// indented under the first line, so nothing in a dialog is ever silently cut.
+// Empty lines are kept, because they are the paragraph breaks the body author
+// wrote. A width of zero or less returns nothing.
+func WrapBody(s string, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			out = append(out, "")
+			continue
+		}
+		indent, _ := preIndentFor(line)
+		out = append(out, wrapIndented(line, indent, width)...)
+	}
+	return out
+}
+
+// wrapIndented wraps the words of line into lines of at most width cells,
+// prefixing every line after the first with indent. The leading whitespace of
+// line opens the first output line, so an indented block keeps its shape.
+func wrapIndented(line, indent string, width int) []string {
 	if width <= 0 {
 		return []string{""}
 	}
+	if lipgloss.Width(indent) >= width {
+		indent = ""
+	}
+	lead := leadingSpace(line)
+	if lipgloss.Width(lead) >= width {
+		lead = ""
+	}
+
 	var lines []string
 	current := ""
-	for _, word := range strings.Fields(s) {
-		for lipgloss.Width(word) > width {
-			head, tail := splitAt(word, width)
+	// budget is what is left on the line being filled: the first one carries
+	// the original indentation, the rest carry the continuation indent.
+	budget := func() int {
+		prefix := indent
+		if len(lines) == 0 {
+			prefix = lead
+		}
+		return max(width-lipgloss.Width(prefix), 1)
+	}
+	flush := func() {
+		if len(lines) == 0 {
+			lines = append(lines, lead+current)
+		} else {
+			lines = append(lines, indent+current)
+		}
+		current = ""
+	}
+
+	for _, word := range strings.Fields(line) {
+		for lipgloss.Width(word) > budget() {
 			if current != "" {
-				lines = append(lines, current)
-				current = ""
+				flush()
+				continue
 			}
-			lines = append(lines, head)
+			head, tail := splitAt(word, budget())
+			if head == "" {
+				break
+			}
+			current = head
+			flush()
 			word = tail
 		}
 		switch {
 		case current == "":
 			current = word
-		case lipgloss.Width(current)+1+lipgloss.Width(word) <= width:
+		case lipgloss.Width(current)+1+lipgloss.Width(word) <= budget():
 			current += " " + word
 		default:
-			lines = append(lines, current)
+			flush()
 			current = word
 		}
 	}
 	if current != "" || len(lines) == 0 {
-		lines = append(lines, current)
+		flush()
 	}
 	return lines
 }

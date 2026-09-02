@@ -24,7 +24,7 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 | Package | What it gives you |
 | --- | --- |
 | `theme` | The Tokyo Night palette, Omarchy theme detection, `NO_COLOR`, and a ready-made set of Lip Gloss styles |
-| `ui` | Header, table, help bar, help screen, status line, and the confirm / input / picker dialogs |
+| `ui` | Header, table, help bar, help screen, status line, and the confirm / input / picker dialogs — see [`docs/dialogs.md`](docs/dialogs.md) |
 | `config` | `/etc/<tool>/config.toml` + `~/.config/<tool>/config.toml` + environment, in that order |
 | `runner` | Preview → confirm → run, including privilege escalation, timeouts and a fake for `--demo` and tests |
 | `manifest` | Reads the tool.json a tool embeds, so the manifest is the single source at runtime too |
@@ -93,6 +93,15 @@ guaranteed to be what executes. That is the whole trust boundary.
 
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
+
+The dialog is held to the same standard as the runner. `ui.Confirm` wraps its
+body and its command preview to the dialog's inner width instead of clipping
+them — a command whose tail is invisible is a command nobody can check — and
+scrolls under a pinned title and footer when the body is taller than the
+terminal. `ui.Picker` filters as you type, which is what makes choosing among
+three hundred systemd units possible at all.
+[`docs/dialogs.md`](docs/dialogs.md) has the keys and the one behaviour change
+this brought to the tools.
 
 ## Demo mode and tests
 
