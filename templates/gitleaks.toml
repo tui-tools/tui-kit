@@ -4,6 +4,13 @@
 # runs it twice: over the whole git history, because a secret that was
 # committed once stays reachable long after the commit that removed it, and
 # over the working tree, so a file that is not committed yet is caught first.
+#
+# "Unchanged" has exactly one exception, and it is per repository rather than
+# per family: a tool whose own pushed history still carries a finding may add a
+# `commits` allowlist naming that sha, with the reason written beside it. That
+# is history, and history is not shared between tools. Everything else — the
+# rules, the stand-in names below, the build-output paths — is family-wide and
+# is edited here, in the template, so every tool inherits it on its next copy.
 [extend]
 # The upstream rule set is the baseline; this file only adds to it.
 useDefault = true
