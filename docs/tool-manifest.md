@@ -1,7 +1,7 @@
 # The tool manifest
 
 Every tool in the family carries a `tool.json` at the root of its repository. It
-is what the family website — [tui-tools.github.io](https://tui-tools.github.io)
+is what the family website — [tui.tools](https://tui.tools)
 — reads to build the tool's card and its detail page. Nothing about a tool is
 described twice: the manifest holds the facts, the release holds the binaries,
 and the site joins them.

@@ -46,7 +46,10 @@ CHANNELS = [
     ("source", "From source", "sh"),
 ]
 
-SETUP_URL = "https://tui-tools.github.io/install/"
+# The family website. Every rendered README points back at it, so it lives
+# in one place here.
+SITE_URL = "https://tui.tools"
+SETUP_URL = f"{SITE_URL}/install/"
 
 # The one-time repository setup, by hand, per package manager. `{repo}` is the
 # manifest's `install.repo_url`. These are printed next to the one-liner
@@ -207,6 +210,10 @@ def render(manifest: dict, version: str | None, arch: str) -> str:
     lines.append("```sh")
     lines.append("sha256sum -c checksums.txt --ignore-missing")
     lines.append("```")
+
+    # The tool's own page on the family website, so every README links it.
+    lines.append("")
+    lines.append(f"Website: {SITE_URL}/tools/{name}/")
 
     return "\n".join(lines)
 
