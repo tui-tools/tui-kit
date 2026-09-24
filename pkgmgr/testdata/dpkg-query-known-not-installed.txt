@@ -1,0 +1,6 @@
+dpkg-query: no packages found matching tui-dc
+dpkg-query: no packages found matching tui-vpn
+tui-cert||not-installed
+tui-containers||not-installed
+tui-cron||not-installed
+tui-disk||not-installed

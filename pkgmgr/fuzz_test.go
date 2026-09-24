@@ -50,9 +50,23 @@ func checkVersions(t *testing.T, versions map[string]string) {
 }
 
 func FuzzParsePipedVersions(f *testing.F) {
-	seed(f, "dpkg-query-tui.txt", "rpm-q-tui.txt", "rpm-q-installed.txt", "dnf-repoquery-tui.txt")
+	seed(f, "rpm-q-tui.txt", "rpm-q-installed.txt", "dnf-repoquery-tui.txt")
 	f.Fuzz(func(t *testing.T, out string) {
 		checkVersions(t, ParsePipedVersions(out))
+	})
+}
+
+// FuzzParseDpkgStatus also holds notInstalledOnly to its promise: whatever
+// the parser keeps as installed is never waved through as a "not there".
+func FuzzParseDpkgStatus(f *testing.F) {
+	seed(f, "dpkg-query-tui.txt", "dpkg-query-known-not-installed.txt")
+	f.Add("tui-ssh|0.1.2-1|config-files")
+	f.Fuzz(func(t *testing.T, out string) {
+		versions := ParseDpkgStatus(out)
+		checkVersions(t, versions)
+		if len(versions) > 0 && notInstalledOnly(out) {
+			t.Fatalf("installed %v, yet the output was read as not installed", versions)
+		}
 	})
 }
 

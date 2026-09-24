@@ -196,9 +196,12 @@ func BuildInstalled(manager Manager, names []string) (Command, error) {
 	}
 	switch manager {
 	case ManagerAPT:
+		// dpkg also answers names it knows without them being installed
+		// (Suggests: of an installed package, removed but not purged), so the
+		// status comes along and ParseDpkgStatus keeps only `installed`.
 		return Command{
 			Argv: append([]string{
-				"dpkg-query", "-W", "-f=${Package}|${Version}\n",
+				"dpkg-query", "-W", "-f=${Package}|${Version}|${db:Status-Status}\n",
 			}, names...),
 			Explain: "Read the installed versions from the dpkg database",
 		}, nil

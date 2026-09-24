@@ -62,14 +62,35 @@ func TestParsePipedVersionsRPM(t *testing.T) {
 	}
 }
 
-func TestParsePipedVersionsDpkg(t *testing.T) {
-	installed := ParsePipedVersions(fixture(t, "dpkg-query-tui.txt"))
+func TestParseDpkgStatus(t *testing.T) {
+	installed := ParseDpkgStatus(fixture(t, "dpkg-query-tui.txt"))
 	if got := installed["tui-firewall"]; got != "0.2.1-1" {
 		t.Errorf("tui-firewall = %q", got)
 	}
 	// dpkg-query's "no packages found matching" line shares the stream.
 	if len(installed) != 2 {
 		t.Errorf("parsed %d packages, want 2: %v", len(installed), installed)
+	}
+}
+
+// TestParseDpkgStatusKnownNotInstalled: dpkg answers names it only knows of
+// (here from the Suggests: of an installed tui-tools) with an empty version
+// and a not-installed status, and a removed-but-not-purged package with its
+// old version and config-files. Neither is installed.
+func TestParseDpkgStatusKnownNotInstalled(t *testing.T) {
+	if got := ParseDpkgStatus(fixture(t, "dpkg-query-known-not-installed.txt")); len(got) != 0 {
+		t.Errorf("known but absent names read as installed: %v", got)
+	}
+	got := ParseDpkgStatus("tui-ssh|0.1.2-1|config-files\ntui-firewall|0.2.1-1|installed\n")
+	if _, ok := got["tui-ssh"]; ok {
+		t.Errorf("a removed but not purged package was reported as installed")
+	}
+	if got["tui-firewall"] != "0.2.1-1" || len(got) != 1 {
+		t.Errorf("parsed %v, want only tui-firewall", got)
+	}
+	// Without a status there is no telling, so the line is not an answer.
+	if got := ParseDpkgStatus("tui-firewall|0.2.1-1\n"); len(got) != 0 {
+		t.Errorf("a two-field line was read as installed: %v", got)
 	}
 }
 

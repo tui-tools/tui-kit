@@ -2,8 +2,13 @@ package pkgmgr
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tui-tools/tui-kit/runner"
 )
 
 // Both implementations answer the same interface, which is what lets a UI
@@ -276,6 +281,9 @@ func TestNotInstalledOnly(t *testing.T) {
 		"package tui-disk is not installed",
 		"dpkg-query: no packages found matching tui-disk",
 		"error: package 'tui-disk' was not found",
+		"tui-cert||not-installed",
+		"tui-ssh|0.1.2-1|config-files",
+		fixture(t, "dpkg-query-known-not-installed.txt"),
 	} {
 		if !notInstalledOnly(out) {
 			t.Errorf("%q was read as a failure", out)
@@ -284,11 +292,76 @@ func TestNotInstalledOnly(t *testing.T) {
 	for _, out := range []string{
 		"sudo: a password is required",
 		"error: rpmdb: BDB0113 Thread died in Berkeley DB library",
+		// An installed package is an answer the parser reads, not a "not
+		// there"; the caller only asks when nothing parsed.
+		"tui-firewall|0.2.1-1|installed",
 	} {
 		if notInstalledOnly(out) {
 			t.Errorf("%q was read as an answer", out)
 		}
 	}
+}
+
+// TestRealInstalledKnownNotInstalled drives Real.Installed through the kit
+// runner against a stand-in dpkg-query that prints what Ubuntu 24.04 prints
+// once tui-tools, which suggests its siblings, is installed — and exits 1 as
+// dpkg-query does. That is an answer: nothing installed, and no error.
+func TestRealInstalledKnownNotInstalled(t *testing.T) {
+	for _, tc := range []struct {
+		what string
+		out  string
+		want map[string]string
+	}{
+		{"suggested names", fixture(t, "dpkg-query-known-not-installed.txt"), map[string]string{}},
+		{"removed but not purged", "tui-ssh|0.1.2-1|config-files\n", map[string]string{}},
+		{"mixed", fixture(t, "dpkg-query-known-not-installed.txt") +
+			"tui-firewall|0.2.1-1|installed\n", map[string]string{"tui-firewall": "0.2.1-1"}},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			pm := stubDpkgQuery(t, tc.out, 1)
+			got, err := pm.Installed(context.Background(), []string{"tui-cert", "tui-ssh"})
+			if err != nil {
+				t.Fatalf("Installed failed: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("Installed = %v, want %v", got, tc.want)
+			}
+			for name, version := range tc.want {
+				if got[name] != version {
+					t.Errorf("%s = %q, want %q", name, got[name], version)
+				}
+			}
+		})
+	}
+	// A real failure still is one.
+	pm := stubDpkgQuery(t, "dpkg-query: error: parsing file '/var/lib/dpkg/status'\n", 2)
+	if _, err := pm.Installed(context.Background(), []string{"tui-cert"}); err == nil {
+		t.Errorf("a broken dpkg database was read as an answer")
+	}
+}
+
+// stubDpkgQuery builds an apt Real whose only binary is a script named
+// dpkg-query that prints out and exits with status.
+func stubDpkgQuery(t *testing.T, out string, status int) *Real {
+	t.Helper()
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(outFile, []byte(out), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf("#!/bin/sh\ncat '%s'\nexit %d\n", outFile, status)
+	if err := os.WriteFile(filepath.Join(dir, "dpkg-query"), []byte(script), 0o700); err != nil { //nolint:gosec // an executable stub in a test directory
+		t.Fatal(err)
+	}
+	// The stub comes first, ahead of a real dpkg-query on a Debian runner,
+	// and the rest of PATH stays for the cat it calls.
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	unprivileged := false
+	run, err := runner.New(runner.Options{Bin: "dpkg-query", PrivilegedReads: &unprivileged})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Real{manager: ManagerAPT, runners: map[string]*runner.Runner{"dpkg-query": run}}
 }
 
 // TestFakeDescribesItselfAsADemo: nobody should mistake a demo for a machine.

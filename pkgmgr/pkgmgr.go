@@ -437,6 +437,11 @@ func (r *Real) Available(ctx context.Context, names []string) (map[string]string
 // notInstalledOnly reports whether the output is nothing but the managers'
 // "no such package" complaints. Those are an answer — the package is not
 // there — and the caller reads it from the absent map key.
+//
+// dpkg-query adds a second kind of "not there": a name its database knows but
+// that is not installed comes back as a format line, `name||not-installed`,
+// or `name|0.1.2-1|config-files` for a package removed but not purged, and
+// dpkg-query still exits 1. Such a line is an answer too.
 func notInstalledOnly(out string) bool {
 	lines := splitLines(out)
 	if len(lines) == 0 {
@@ -446,6 +451,7 @@ func notInstalledOnly(out string) bool {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "":
+		case dpkgKnownNotInstalled(line):
 		case strings.Contains(line, "is not installed"),
 			strings.Contains(line, "no packages found matching"),
 			strings.Contains(line, "not installed and no information"),
@@ -459,6 +465,14 @@ func notInstalledOnly(out string) bool {
 		}
 	}
 	return true
+}
+
+// dpkgKnownNotInstalled reports whether a line is dpkg-query naming a package
+// it knows but that is not installed: an empty version, or a status other
+// than `installed`.
+func dpkgKnownNotInstalled(line string) bool {
+	_, version, status, ok := cutDpkgLine(line)
+	return ok && (version == "" || status != dpkgInstalled)
 }
 
 // Install builds the steps that install the named packages.
