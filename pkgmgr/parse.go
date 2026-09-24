@@ -14,8 +14,9 @@ func splitLines(text string) []string {
 	return strings.Split(trimmed, "\n")
 }
 
-// ParsePipedVersions reads the `key|version` shape both `dpkg-query -W -f` and
-// `rpm -q --qf` are asked for here, and that `dnf repoquery --qf` prints too.
+// ParsePipedVersions reads the `key|version` shape `rpm -q --qf` is asked for
+// here, and that `dnf repoquery --qf` prints too. dpkg-query needs a status
+// field on top of it, which ParseDpkgStatus reads.
 //
 // The key is whatever the format string put first: this package asks for the
 // bare name, and tui-update asks the same query for "name.arch". Neither is
@@ -35,6 +36,40 @@ func ParsePipedVersions(out string) map[string]string {
 		versions[key] = version
 	}
 	return versions
+}
+
+// ParseDpkgStatus reads the `name|version|status` shape BuildInstalled asks
+// dpkg-query for, and keeps only the packages whose status is `installed`.
+//
+// dpkg answers every name its database knows, not only the installed ones: a
+// name it learnt from the Suggests: of an installed package comes back as
+// `name||not-installed`, and a package removed but not purged as
+// `name|0.1.2-1|config-files`, a version and all. The status is what tells
+// them apart, so a line without one is not read as installed either.
+func ParseDpkgStatus(out string) map[string]string {
+	versions := map[string]string{}
+	for _, line := range splitLines(out) {
+		key, version, status, ok := cutDpkgLine(line)
+		if !ok || version == "" || status != dpkgInstalled {
+			continue
+		}
+		versions[key] = version
+	}
+	return versions
+}
+
+// dpkgInstalled is the ${db:Status-Status} of a package that is installed.
+const dpkgInstalled = "installed"
+
+// cutDpkgLine splits one `name|version|status` line. ok is false for a line of
+// any other shape, a dpkg-query complaint among them: those carry spaces in
+// what would be the name.
+func cutDpkgLine(line string) (key, version, status string, ok bool) {
+	fields := strings.Split(strings.TrimSpace(line), "|")
+	if len(fields) != 3 || fields[0] == "" || strings.ContainsAny(fields[0], " \t") {
+		return "", "", "", false
+	}
+	return fields[0], fields[1], fields[2], true
 }
 
 // ParsePacmanQuery reads `pacman -Q`, whose every line is a name and a
@@ -121,10 +156,14 @@ func ParseAPTPolicy(out string) map[string]string {
 
 // parseInstalled reads the output of BuildInstalled for a manager.
 func parseInstalled(manager Manager, out string) map[string]string {
-	if manager == ManagerPacman {
+	switch manager {
+	case ManagerAPT:
+		return ParseDpkgStatus(out)
+	case ManagerPacman:
 		return ParsePacmanQuery(out)
+	default:
+		return ParsePipedVersions(out)
 	}
-	return ParsePipedVersions(out)
 }
 
 // parseAvailable reads the output of BuildAvailable for a manager.

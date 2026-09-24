@@ -88,7 +88,7 @@ func TestReadArgvTable(t *testing.T) {
 		want    string
 	}{
 		{ManagerAPT, BuildInstalled,
-			"dpkg-query -W -f=${Package}|${Version}\n tui-firewall"},
+			"dpkg-query -W -f=${Package}|${Version}|${db:Status-Status}\n tui-firewall"},
 		{ManagerPacman, BuildInstalled, "pacman -Q tui-firewall"},
 		{ManagerAPT, BuildAvailable, "apt-cache policy tui-firewall"},
 		{ManagerPacman, BuildAvailable, "pacman -Si tui-firewall"},
