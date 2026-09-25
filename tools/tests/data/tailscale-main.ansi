@@ -1,0 +1,32 @@
+ [1m[38;2;121;162;247mtui-tailscale[0m[38;2;86;95;137m  tailscale via sudo -n  ·  demo (no changes are applied)[39m
+ [38;2;86;95;137mstate: [38;2;192;202;245mrunning[39m   [38;2;86;95;137mserver: [38;2;192;202;245mheadscale.example.com[39m   [38;2;86;95;137mpeers: [38;2;192;202;245m2/2 online[39m   [38;2;86;95;137mcontrol: [38;2;192;202;245mheadscale active[39m
+[38;2;121;162;247m node [38;2;86;95;137m│ peers (2)  ┃ headscale: users │ nodes (3) │ preauth keys │ dns [39m
+
+  [38;2;86;95;137mstate             [1m[38;2;158;206;105mrunning · online[0m
+  [38;2;86;95;137mlogin server      [38;2;192;202;245mhttps://headscale.example.com  (self-hosted)[39m
+  [38;2;86;95;137muser              [38;2;192;202;245muser@example.com[39m
+  [38;2;86;95;137mhostname          [38;2;192;202;245mexample-node  (example-node.tailnet.example.com)[39m
+  [38;2;86;95;137maddresses         [38;2;192;202;245m100.64.0.1  fd7a:115c:a1e0::1[39m
+  [38;2;86;95;137mtailnet           [38;2;192;202;245mheadscale.example.com[39m
+  [38;2;86;95;137mMagicDNS          [38;2;192;202;245mon  (tailnet.example.com)[39m
+
+  [38;2;86;95;137maccept routes     [38;2;192;202;245myes[38;2;86;95;137m   a toggles[39m
+  [38;2;86;95;137madvertised routes [38;2;192;202;245m-[38;2;86;95;137m   A edits[39m
+  [38;2;86;95;137mexit node         [38;2;192;202;245mnone[38;2;86;95;137m   x picks[39m
+  [38;2;86;95;137moffers exit node  [38;2;192;202;245mno[38;2;86;95;137m   E toggles[39m
+  [38;2;86;95;137maccept DNS        [38;2;192;202;245myes[39m
+  [38;2;86;95;137mjoin profile      [38;2;192;202;245mlaptop (matches these settings)[38;2;86;95;137m   j starts from it[39m
+  [38;2;86;95;137mlogin profile     [38;2;192;202;245muser@example.com on headscale.example.com · 2 login profiles[38;2;86;95;137m   p switches[39m
+  [38;2;86;95;137mversion           [38;2;192;202;245m1.98.4[39m
+
+
+
+
+
+
+
+
+
+
+ [1m[38;2;224;175;104mtab[0m [38;2;86;95;137mscreen[39m  [1m[38;2;224;175;104mj[0m [38;2;86;95;137mjoin[39m  [1m[38;2;224;175;104ma[0m [38;2;86;95;137maccept routes[39m  [1m[38;2;224;175;104mA[0m [38;2;86;95;137madv. routes[39m  [1m[38;2;224;175;104mx[0m [38;2;86;95;137mexit node[39m  [1m[38;2;224;175;104mE[0m [38;2;86;95;137madv. exit[39m  [1m[38;2;224;175;104mh[0m [38;2;86;95;137mhostname[39m  [1m[38;2;224;175;104md[0m [38;2;86;95;137mdown[39m  [1m[38;2;224;175;104mu[0m [38;2;86;95;137mup[39m  [1m[38;2;224;175;104mL[0m [38;2;86;95;137mlogout[39m
+ [38;2;86;95;137mevery change is previewed and confirmed  ·  ? for help[39m
