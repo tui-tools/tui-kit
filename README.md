@@ -93,6 +93,11 @@ out, err := r.Run(ctx, cmd)
 Because `Preview` and `Run` consume the same value, the text in the dialog is
 guaranteed to be what executes. That is the whole trust boundary.
 
+The preview is also a line a person can paste. Each argument is shell-quoted
+with POSIX single quotes when it needs it (`runner.Join`, the rule of Python's
+`shlex.join`), so `ufw allow 19443/tcp comment 'headscale control (tailnet)'`
+reads, and runs in a shell, as the same argv the runner executes.
+
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
 

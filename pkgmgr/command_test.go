@@ -88,12 +88,12 @@ func TestReadArgvTable(t *testing.T) {
 		want    string
 	}{
 		{ManagerAPT, BuildInstalled,
-			"dpkg-query -W -f=${Package}|${Version}|${db:Status-Status}\n tui-firewall"},
+			"dpkg-query -W '-f=${Package}|${Version}|${db:Status-Status}\n' tui-firewall"},
 		{ManagerPacman, BuildInstalled, "pacman -Q tui-firewall"},
 		{ManagerAPT, BuildAvailable, "apt-cache policy tui-firewall"},
 		{ManagerPacman, BuildAvailable, "pacman -Si tui-firewall"},
 		{ManagerDNF, BuildAvailable,
-			"dnf --quiet repoquery --latest-limit 1 --qf %{name}|%{evr}\n tui-firewall"},
+			"dnf --quiet repoquery --latest-limit 1 --qf '%{name}|%{evr}\n' tui-firewall"},
 	} {
 		cmd, err := tc.build(tc.manager, names)
 		if err != nil {

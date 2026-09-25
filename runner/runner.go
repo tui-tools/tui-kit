@@ -71,8 +71,10 @@ type Command struct {
 	Stdin string
 }
 
-// String renders the command the way the user reads it in the preview.
-func (c Command) String() string { return strings.Join(c.Argv, " ") }
+// String renders the command the way the user reads it in the preview: each
+// argument shell-quoted when it needs it (see Join), so the line pasted into a
+// shell is the same argv.
+func (c Command) String() string { return Join(c.Argv) }
 
 // Interface is the part of a Runner a UI needs. Tools depend on it so a fake
 // can stand in for the real host in tests and in --demo mode.
@@ -220,7 +222,7 @@ func (r *Runner) Preview(cmd Command) string {
 	if !r.Privileged() {
 		return cmd.String()
 	}
-	return strings.Join(r.Privilege, " ") + " " + cmd.String()
+	return Join(r.Privilege) + " " + cmd.String()
 }
 
 // argv builds the invocation: the resolved binary, the command's own

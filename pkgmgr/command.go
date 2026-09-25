@@ -29,8 +29,9 @@ type Command struct {
 	Stdin string
 }
 
-// String renders the command the way the user reads it in the preview.
-func (c Command) String() string { return strings.Join(c.Argv, " ") }
+// String renders the command the way the user reads it in the preview, with
+// the same shell quoting the runner's preview uses, so both agree.
+func (c Command) String() string { return c.runnerCommand().String() }
 
 // runnerCommand converts a step into the value the kit runner takes.
 func (c Command) runnerCommand() runner.Command {
