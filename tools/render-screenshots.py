@@ -31,7 +31,10 @@ palette, frame and fonts as the README screenshots:
 --from-ansi takes a file or a directory (every *.ansi and *.txt in it) and can
 be repeated. The screen size defaults to the widest line and the line count of
 the capture; --crop-rows a:b keeps just rows a..b-1 (0-based, like a Python
-slice, either end may be left out or negative).
+slice, either end may be left out or negative) and --crop-cols a:b does the
+same for columns. --auto-crop then trims the rows and columns that are blank
+all around the kept region, so a dialog narrower than the pane comes out
+centred in its frame instead of keeping the pane's margins.
 """
 from __future__ import annotations
 
@@ -517,31 +520,84 @@ def visible_width(line: str) -> int:
     return sum(char_width(ch) for ch in SGR_RE.sub("", line) if ch >= " ")
 
 
+def shows(cell: tuple) -> bool:
+    """Whether a cell shows something: a glyph, or a fill the page paints.
+
+    The right half of a wide glyph ("") counts, so a region that ends on a
+    wide glyph keeps both of its columns.
+    """
+    ch, st = cell
+    return ch != " " or bool(
+        st and (st.bg or st.reverse or st.underline))
+
+
 def drawn_width(row: list[tuple]) -> int:
     """Cells up to the last one that shows something: a glyph or a fill."""
     for k in range(len(row) - 1, -1, -1):
-        ch, st = row[k]
-        if ch != " " or (st and (st.bg or st.reverse or st.underline)):
+        if shows(row[k]):
             return k + 1
     return 0
 
 
-def parse_crop(spec: str) -> slice:
-    """--crop-rows a:b as a Python slice over the captured rows."""
+def parse_crop(spec: str, flag: str = "--crop-rows") -> slice:
+    """--crop-rows or --crop-cols a:b as a Python slice."""
     a, sep, b = spec.partition(":")
     if not sep:
-        raise ValueError(f"--crop-rows wants a:b, got {spec!r}")
+        raise ValueError(f"{flag} wants a:b, got {spec!r}")
     return slice(int(a) if a.strip() else None, int(b) if b.strip() else None)
 
 
+def crop_columns(grid: list[list[tuple]], cols: slice) -> list[list[tuple]]:
+    """Slice every row by columns without splitting a wide glyph.
+
+    A wide glyph cut in half at either edge becomes a blank cell in its
+    style, so each row keeps the width of the slice and nothing draws a
+    glyph the crop no longer has room for.
+    """
+    out = []
+    for row in grid:
+        start, stop, _ = cols.indices(len(row))
+        cut = list(row[start:stop])
+        if cut and cut[0][0] == "":
+            # The right half of a glyph whose left half is outside.
+            cut[0] = (" ", cut[0][1])
+        if (cut and stop < len(row) and row[stop][0] == ""
+                and char_width((cut[-1][0] or " ")[0]) == 2):
+            # The left half of a glyph whose right half is outside.
+            cut[-1] = (" ", cut[-1][1])
+        out.append(cut)
+    return out
+
+
+def auto_crop(grid: list[list[tuple]]) -> list[list[tuple]]:
+    """Trim the rows and columns that are blank all around the content.
+
+    A dialog is centred in the pane, so a region cropped around it keeps
+    the pane's empty margins on both sides; trimming them leaves the dialog
+    alone, and the page frame then centres it. Rows and columns inside the
+    content are kept, blank or not. A grid with nothing drawn is left as is.
+    """
+    drawn = [k for k, row in enumerate(grid) if any(shows(c) for c in row)]
+    if not drawn:
+        return grid
+    grid = grid[drawn[0]:drawn[-1] + 1]
+    width = max(len(row) for row in grid)
+    used = [k for k in range(width)
+            if any(k < len(row) and shows(row[k]) for row in grid)]
+    return crop_columns(grid, slice(used[0], used[-1] + 1))
+
+
 def capture_html(raw: bytes, cols: int | None = None, rows: int | None = None,
-                 crop: slice | None = None) -> tuple[str, int, int]:
+                 crop: slice | None = None, crop_cols: slice | None = None,
+                 trim: bool = False) -> tuple[str, int, int]:
     """Render a `tmux capture-pane -e -p` frame.
 
     Returns the page body and the size in cells actually drawn. The whole
     capture is replayed first and cropped afterwards: tmux carries the SGR
     state from one line to the next, so cutting the text before the replay
-    would lose the colors a cropped region starts with.
+    would lose the colors a cropped region starts with. Rows are cropped
+    first (crop), then columns (crop_cols), then, with trim, the blank
+    margins left around the region (auto_crop).
     """
     text = raw.decode("utf-8", "replace").replace("\r\n", "\n")
     lines = text.split("\n")
@@ -555,6 +611,10 @@ def capture_html(raw: bytes, cols: int | None = None, rows: int | None = None,
                   min(widest, MAX_COLS), min(len(lines), MAX_ROWS))
     if crop is not None:
         grid = grid[crop] or grid[:1]
+    if crop_cols is not None:
+        grid = crop_columns(grid, crop_cols)
+    if trim:
+        grid = auto_crop(grid)
     if cols is None:
         cols = max((drawn_width(row) for row in grid), default=1) or 1
     rows = rows if rows is not None else len(grid)
@@ -644,6 +704,8 @@ def ansi_inputs(specs: list[str]) -> list[str]:
 
 def render_captures(args, chrome: str) -> int:
     crop = parse_crop(args.crop_rows) if args.crop_rows else None
+    crop_cols = (parse_crop(args.crop_cols, "--crop-cols")
+                 if args.crop_cols else None)
     files = ansi_inputs(args.from_ansi)
     if not files:
         print("--from-ansi matched no *.ansi or *.txt file", file=sys.stderr)
@@ -651,7 +713,7 @@ def render_captures(args, chrome: str) -> int:
     for path in files:
         with open(path, "rb") as fh:
             body, cols, rows = capture_html(fh.read(), args.cols, args.rows,
-                                            crop)
+                                            crop, crop_cols, args.auto_crop)
         name = os.path.splitext(os.path.basename(path))[0]
         png = os.path.join(args.out, f"{name}.png")
         window = fit_window(args.window, cols, rows, args.title)
@@ -715,6 +777,11 @@ def main() -> int:
                          "'ubuntu: tui-tailscale'")
     ap.add_argument("--crop-rows", default="", metavar="A:B",
                     help="captures only: keep rows A..B-1 (0-based slice)")
+    ap.add_argument("--crop-cols", default="", metavar="A:B",
+                    help="captures only: keep columns A..B-1 (0-based slice)")
+    ap.add_argument("--auto-crop", action="store_true",
+                    help="captures only: trim the blank rows and columns "
+                         "around the kept region, so a dialog is centred")
     ap.add_argument("--settle", type=float, default=2.0,
                     help="seconds to wait before typing the keys")
     ap.add_argument("--budget", type=float, default=5.0,
@@ -723,13 +790,18 @@ def main() -> int:
                     help="minimum headless Chrome window size, W,H; the "
                          "window always grows to fit the frame")
     args = ap.parse_args()
-    if args.crop_rows and not args.from_ansi:
-        ap.error("--crop-rows only applies to --from-ansi")
-    if args.crop_rows:
-        try:
-            parse_crop(args.crop_rows)
-        except ValueError as err:
-            ap.error(str(err))
+    for flag, value in (("--crop-rows", args.crop_rows),
+                        ("--crop-cols", args.crop_cols),
+                        ("--auto-crop", args.auto_crop)):
+        if value and not args.from_ansi:
+            ap.error(f"{flag} only applies to --from-ansi")
+    for flag, value in (("--crop-rows", args.crop_rows),
+                        ("--crop-cols", args.crop_cols)):
+        if value:
+            try:
+                parse_crop(value, flag)
+            except ValueError as err:
+                ap.error(str(err))
 
     chrome = find_chrome()
     if not chrome:

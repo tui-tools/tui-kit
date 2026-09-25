@@ -183,6 +183,87 @@ class CropAndSizeTest(unittest.TestCase):
             renderer.parse_crop("5")
 
 
+class ColumnCropTest(unittest.TestCase):
+    """--crop-cols and --auto-crop (tui-kit#36)."""
+
+    def test_crop_cols_keeps_a_column_range(self):
+        body, cols, rows = renderer.capture_html(
+            b"0123456789\nabcdefghij\n",
+            crop_cols=renderer.parse_crop("2:6", "--crop-cols"))
+        self.assertEqual((cols, rows), (4, 2))
+        self.assertEqual(plain(body), ["2345", "cdef"])
+
+    def test_crop_cols_after_rows_keeps_earlier_colors(self):
+        raw = b"\x1b[38;2;1;2;3mab\ncdef\x1b[0m\nplain\n"
+        body, cols, rows = renderer.capture_html(
+            raw, crop=renderer.parse_crop("1:2"),
+            crop_cols=renderer.parse_crop("2:", "--crop-cols"))
+        self.assertEqual((cols, rows), (2, 1))
+        self.assertIn(("color:#010203;", "ef"), runs(body))
+
+    def test_crop_cols_never_splits_a_wide_glyph(self):
+        # 日 spans columns 1-2 and 本 columns 3-4; a crop through either
+        # leaves a blank cell and the row keeps the slice's width.
+        body, cols, _ = renderer.capture_html(
+            "a日本b\n".encode(),
+            crop_cols=renderer.parse_crop("2:4", "--crop-cols"), cols=2)
+        self.assertEqual(cols, 2)
+        self.assertEqual(plain(body), ["  "])
+        self.assertEqual(row_cells(body), 2)
+
+    def test_auto_crop_centres_the_dialog(self):
+        raw = fixture("tailscale-dialog.ansi")
+        _, full_cols, full_rows = renderer.capture_html(raw)
+        body, cols, rows = renderer.capture_html(raw, trim=True)
+        lines = plain(body)
+        # Only the box is left: its corners are the corners of the frame.
+        self.assertTrue(lines[0].startswith("╭") and lines[0].endswith("╮"))
+        self.assertTrue(lines[-1].startswith("╰") and lines[-1].endswith("╯"))
+        self.assertLess(cols, full_cols)
+        self.assertLess(rows, full_rows)
+        self.assertIn("Accept routes: off", "\n".join(lines))
+        counts = [row_cells(row) for row in body.split("\n")]
+        self.assertEqual(set(counts), {cols})
+
+    def test_auto_crop_after_a_row_crop(self):
+        # The guide's flow: rows around the dialog, then the margins go.
+        raw = b"title\n\n    +--+    \n    |ok|    \n    +--+    \n\nfooter\n"
+        body, cols, rows = renderer.capture_html(
+            raw, crop=renderer.parse_crop("1:6"), trim=True)
+        self.assertEqual((cols, rows), (4, 3))
+        self.assertEqual(plain(body), ["+--+", "|ok|", "+--+"])
+
+    def test_auto_crop_keeps_inner_blanks_and_fills(self):
+        # A blank row inside the content stays; a background fill counts
+        # as content even without a glyph.
+        raw = b"\n  a  \n\n  \x1b[48;2;9;9;9m  \x1b[0m\n  b\n\n"
+        body, cols, rows = renderer.capture_html(raw, trim=True)
+        self.assertEqual((cols, rows), (2, 4))
+        self.assertEqual(plain(body), ["a ", "  ", "  ", "b "])
+        self.assertIn("background:#090909;", body)
+
+    def test_auto_crop_keeps_a_wide_glyph_at_the_edge(self):
+        body, cols, _ = renderer.capture_html("  a日  \n".encode(), trim=True)
+        self.assertEqual(cols, 3)
+        self.assertIn('<c>a</c><c class="w">日</c>', body)
+
+    def test_auto_crop_of_a_blank_capture(self):
+        _, cols, rows = renderer.capture_html(b"   \n", trim=True)
+        self.assertEqual((cols, rows), (1, 1))
+
+    def test_parse_crop_names_its_flag(self):
+        with self.assertRaisesRegex(ValueError, "--crop-cols"):
+            renderer.parse_crop("7", "--crop-cols")
+
+    def test_crops_need_from_ansi(self):
+        for flag in (["--crop-cols", "1:2"], ["--auto-crop"]):
+            proc = subprocess.run(
+                [sys.executable, SCRIPT, "--bin", "x", *flag],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(proc.returncode, 2, flag)
+            self.assertIn("only applies to --from-ansi", proc.stderr)
+
+
 class AttributeTest(unittest.TestCase):
     """SGR attributes a capture can carry, on synthetic input."""
 

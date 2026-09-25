@@ -64,6 +64,13 @@ tui-kit/tools/render-screenshots.py \
   either end may be left out or negative (`3:`, `:-2`). The whole capture is
   replayed first, so the cropped region keeps colors set on earlier lines.
   The width then follows the region.
+- `--crop-cols a:b` does the same for columns, after the row crop. A wide
+  glyph cut in half at either edge becomes a blank cell.
+- `--auto-crop` trims the rows and columns that are blank all around what is
+  left after the crops (a cell counts when it has a glyph or a background).
+  Dialogs are centred in the pane, so a dialog cropped by rows alone keeps
+  the pane's empty margins; with `--auto-crop` only the box remains and the
+  frame centres it: `--crop-rows 8:25 --auto-crop`.
 - `--title` adds a window bar with the given text above the frame, useful to
   say which host a frame came from. It works in the binary mode as well;
   without it the page is exactly the README one.
