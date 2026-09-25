@@ -33,7 +33,8 @@ go get github.com/tui-tools/tui-kit@v0.1.3
 | `report` | Renders the `--report` block a bug report needs — tool and kit versions, backend, distribution, kernel, terminal, where the binary came from — with no hostname, user name, home path or address in it |
 
 Plus the scripts in `tools/`: `render-screenshots.py` renders a tool's README
-screenshots from the real binary, `render-install.py` and `render-compat.py`
+screenshots from the real binary, or guide images from frames captured with
+`tmux capture-pane` (see [`docs/screenshots.md`](docs/screenshots.md)), `render-install.py` and `render-compat.py`
 generate the README sections that come from the manifest, `compat-sync.py`
 rebuilds the tested-version lists from a tool's `compat/results.jsonl`,
 `check-nfpm.py` asserts that the .deb/.rpm/pacman metadata in a tool's
