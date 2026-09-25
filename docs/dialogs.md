@@ -1,8 +1,8 @@
 # Dialogs
 
-`ui.Confirm`, `ui.Input` and `ui.Picker` are the three dialogs every tool in the
-family uses. They are values the host model stores and forwards key messages
-to, not Bubble Tea models, so a tool keeps its own update loop.
+`ui.Confirm`, `ui.Input`, `ui.Picker` and `ui.FilePicker` are the dialogs every
+tool in the family uses. They are values the host model stores and forwards key
+messages to, not Bubble Tea models, so a tool keeps its own update loop.
 
 Nothing here is opt-in. A tool that bumps the kit gets the wrapping, the
 scrolling and the picker filter without touching a line of its own code.
@@ -114,3 +114,101 @@ move the cursor and `q` no longer cancels. Arrows, `home`/`end`, `pgup`/`pgdn`,
 A tool whose tests drive a picker with `j` has to press `down` instead after
 bumping the kit. The dialogs' own footers already advertise the arrows, so
 nothing a user reads on screen changed.
+
+## The file picker
+
+`ui.FilePicker` is for the paths a tool asks for: a certificate and its key, an
+SSH key, a share directory, a script, an export target. It lists a directory
+under a path field, and the same field is where a path is typed or pasted,
+which is also the way through on a terminal too narrow to browse comfortably.
+
+```
+│  Certificate for the TLS listener                     │
+│  /etc/ssl/certs                                       │
+│                                                       │
+│   > ca.pem                                            │
+│     server.crt                                        │
+│                                                       │
+│  PEM, readable by the service account.                │
+│                                                       │
+│  ↑/↓ move    enter open/select    ⌫/h up    . hidden  │
+│  / type path    esc cancel                            │
+```
+
+```go
+a.picker = ui.NewFilePicker(ui.FilePickerOptions{
+    Title:      "Certificate for the TLS listener",
+    Help:       "PEM, readable by the service account.",
+    Start:      cfg.TLSCertPath, // a file opens its directory with it highlighted
+    Extensions: []string{".pem", ".crt"},
+})
+
+// In Update, while the picker is open:
+cmd, _ := a.picker.Update(msg)
+if a.picker.Done {
+    if a.picker.Accepted {
+        path := a.picker.Value() // absolute and clean
+        // validate it as before: exists, readable by the service account
+    }
+}
+
+// In View:
+a.picker.View(theme, width, height)
+```
+
+| Option | What it does |
+| --- | --- |
+| `Start` | A directory, or a file (opens its directory with the file highlighted). A path that is gone opens its nearest existing parent. Empty is the working directory. |
+| `Extensions` | Lists and accepts only these files, `.pem` or `pem`, case-insensitively. Directories are always listed. |
+| `ShowHidden` | Lists dot files from the start. |
+| `DirsOnly` | Picks a directory. The list starts with a `./` row that chooses the directory being listed. |
+| `NewFile` | Accepts a typed path that does not exist yet, as long as its directory does. The zero value requires the path to exist. |
+| `Home` | What a typed `~` expands to. Defaults to the user's home on the real filesystem. |
+| `FS` | The filesystem to read, see below. Nil is the real one. |
+
+| Key | What it does |
+| --- | --- |
+| `↑` `↓` `pgup` `pgdn` `home` `end` (and `j` `k` `g` `G`) | move the cursor |
+| `enter` | on a file, chooses it; on a directory, opens it (a directory picker chooses it) |
+| `→` `l` | opens the highlighted directory |
+| `backspace` `h` `←` | goes up one directory, with the cursor on the one just left |
+| `.` | shows or hides dot files |
+| `/` `tab` | moves to the path field, filled with the listed directory |
+| `~` | moves to the path field at the home directory |
+| a paste | lands in the path field, whatever had the focus |
+| `esc` | cancels; in the path field, goes back to the list |
+| `ctrl+c` | always cancels |
+
+In the path field, `enter` uses what was typed: a relative path is taken from
+the listed directory, a directory is opened (a directory picker chooses it)
+and a file is chosen. What the options rule out, a missing file, a new file in
+a directory that does not exist, the wrong extension, is said on the line
+under the list and the field stays as typed, ready to fix.
+
+A directory the tool cannot read is listed as such, "cannot read this
+directory: permission denied", instead of closing the dialog. Backspace goes
+back up, and a path inside it can still be typed.
+
+The picker reads the filesystem to list it, the way `Input` reads keystrokes:
+the family's exec-site rule is about mutations, and the picker performs none.
+It checks only what it needs to list and select. The tool keeps validating the
+result as it did when the path was a typed `ui.Input`.
+
+### A fake tree for `--demo` and tests
+
+`FS` takes anything with `ReadDir` and `Stat` over absolute paths.
+`ui.FileSystemFromFS` adapts an `fs.FS`, so an `fstest.MapFS` is a whole demo
+tree, and a screenshot never shows the machine it was rendered on:
+
+```go
+tree := fstest.MapFS{
+    "etc/ssl/certs/ca.pem":       {Data: []byte("demo")},
+    "etc/ssl/private/server.key": {Data: []byte("demo")},
+}
+opts.FS = ui.FileSystemFromFS(tree)
+```
+
+The listing is the kit's own rather than `bubbles/filepicker`'s: that model
+reads `os.ReadDir` directly, so it cannot list a fake tree, and it drops a read
+error without showing it. The path field is a `bubbles/textinput`, as in
+`Input`.

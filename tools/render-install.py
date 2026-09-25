@@ -19,6 +19,19 @@ whether the file is already up to date, which is what CI runs.
 `{version}` and `{arch}` in a command or a pattern are expanded: the version
 comes from --version, or from the repository's latest tag, or falls back to
 the placeholder itself when there is no tag yet.
+
+The same run owns the stability banner at the top of the README, between
+
+    <!-- stability:start -->
+    <!-- stability:end -->
+
+It renders the family's "Beta." note for a manifest without `stability` (or
+with `"beta"`), and a "Stable since vX.Y.Z" line for `"stable"`. The markers
+are optional while a tool is beta, so a README with a hand-written banner keeps
+working; a stable tool must carry them, or the README would keep calling it
+beta. The bar a tool meets before it says `stable` is docs/stability.md. A
+stable claim whose tag does not exist yet (the promotion PR, rendered with
+--version 1.0.0 or before the tag) is only a warning.
 """
 from __future__ import annotations
 
@@ -32,6 +45,18 @@ import textwrap
 
 START = "<!-- install:start -->"
 END = "<!-- install:end -->"
+
+STABILITY_START = "<!-- stability:start -->"
+STABILITY_END = "<!-- stability:end -->"
+
+# Where the bar a stable tool has met is written down. The stable banner links
+# it, so a reader can see what the word promises.
+STABILITY_DOC = "https://github.com/tui-tools/tui-kit/blob/main/docs/stability.md"
+
+# The family's beta note, word for word as the READMEs carried it by hand.
+BETA_BANNER = """> **Beta.** The family is days old and still changing. Package names, flags
+> and keys may move without notice until 1.0. Pin versions, and report what
+> breaks."""
 
 # The order the channels are presented in, and how each one is titled. A
 # reader picks the row that matches their machine, so the distributions come
@@ -218,6 +243,108 @@ def render(manifest: dict, version: str | None, arch: str) -> str:
     return "\n".join(lines)
 
 
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    """A plain MAJOR.MINOR.PATCH as a tuple, or None for anything else.
+
+    A pre-release or build suffix (1.0.0-rc.1) is not a release a stable
+    claim can rest on, so it parses to None and the check treats it as
+    unknown rather than guessing its order.
+    """
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", text.strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def stability_errors(manifest: dict) -> list[str]:
+    """What is wrong with the manifest's stability claim, if anything.
+
+    The schema already refuses a `stableSince` below 1.0.0, a `stable`
+    without one and a `stableSince` on a beta manifest; this repeats those
+    rules for a checkout that never runs the schema. Whether the release
+    exists yet is not an error: see stability_warnings.
+    """
+    stability = manifest.get("stability", "beta")
+    since = manifest.get("stableSince")
+    if stability not in ("beta", "stable"):
+        return [f'stability must be "beta" or "stable", not {stability!r}']
+    if stability == "beta":
+        if since is not None:
+            return ["stableSince is only allowed with \"stability\": \"stable\""]
+        return []
+
+    if since is None:
+        return ['"stability": "stable" needs "stableSince", the first stable release']
+    parsed = parse_version(since)
+    if parsed is None or parsed[0] < 1:
+        return [
+            f"stableSince {since!r} is not a 1.0.0-or-later release: "
+            "a 0.x tool is beta by definition"
+        ]
+    return []
+
+
+def stability_warnings(manifest: dict, version: str | None) -> list[str]:
+    """Notes on a stable claim whose release is not tagged yet.
+
+    The README documents a state in the same pull request that finishes it,
+    so the promotion PR sets `stable` before the v1.0.0 tag exists: the tag
+    then carries "Stable since v1.0.0". A latest tag below `stableSince` is
+    therefore a pending promotion, reported but never an error. `version` is
+    the latest tag or --version; unknown (a shallow clone) says nothing.
+    """
+    if manifest.get("stability") != "stable" or version is None:
+        return []
+    since = parse_version(manifest.get("stableSince", ""))
+    latest = parse_version(version)
+    if since is None or latest is None or latest >= since:
+        return []
+    return [
+        f"stable since v{manifest['stableSince']}, pending that tag "
+        f"(latest is {version})"
+    ]
+
+
+def render_stability(manifest: dict) -> str:
+    """The banner between the stability markers."""
+    if manifest.get("stability", "beta") != "stable":
+        return BETA_BANNER
+    since = manifest["stableSince"]
+    # 77 columns: the family's 79 minus the "> " every quoted line carries.
+    lines = textwrap.wrap(
+        f"**Stable since v{since}.** Keys, flags and the `--check` JSON follow "
+        "semver: anything new arrives in a minor release, and a removal or a "
+        "change of meaning waits for the next major, announced one minor "
+        f"before. What stable means: [the family's bar]({STABILITY_DOC}).",
+        width=77,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return "\n".join("> " + line for line in lines)
+
+
+def splice_stability(readme: str, banner: str, required: bool) -> str:
+    """Put the banner between the stability markers.
+
+    A README without the markers is left alone unless the banner is required,
+    which is the case for a stable tool: its hand-written beta note would
+    otherwise contradict the manifest.
+    """
+    pattern = re.compile(
+        re.escape(STABILITY_START) + r".*?" + re.escape(STABILITY_END), re.DOTALL
+    )
+    if not pattern.search(readme):
+        if required:
+            raise SystemExit(
+                f"no {STABILITY_START} … {STABILITY_END} markers in the README: "
+                "a stable tool renders its banner, add them where the Beta note was"
+            )
+        return readme
+    return pattern.sub(
+        lambda _: f"{STABILITY_START}\n{banner}\n{STABILITY_END}", readme, count=1
+    )
+
+
 def splice(readme: str, body: str) -> str:
     """Put the rendered body between the markers, leaving the rest alone."""
     pattern = re.compile(
@@ -260,8 +387,21 @@ def main() -> int:
     version = args.version or latest_version(args.manifest.resolve().parent)
     body = render(manifest, version, args.arch)
 
+    errors = stability_errors(manifest)
+    if errors:
+        for error in errors:
+            print(f"{args.manifest}: {error}", file=sys.stderr)
+        return 1
+    for warning in stability_warnings(manifest, version):
+        print(f"{args.manifest}: warning: {warning}", file=sys.stderr)
+
     current = args.readme.read_text()
     updated = splice(current, body)
+    updated = splice_stability(
+        updated,
+        render_stability(manifest),
+        required=manifest.get("stability") == "stable",
+    )
 
     if args.check:
         if current != updated:
@@ -272,7 +412,7 @@ def main() -> int:
 
     if current != updated:
         args.readme.write_text(updated)
-        print(f"wrote the Install section of {args.readme}")
+        print(f"wrote the generated sections of {args.readme}")
     else:
         print(f"{args.readme} already up to date")
     return 0

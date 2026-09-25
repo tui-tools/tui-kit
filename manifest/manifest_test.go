@@ -102,3 +102,21 @@ func TestLoadFile(t *testing.T) {
 		t.Error("a missing file must fail")
 	}
 }
+
+func TestStability(t *testing.T) {
+	m, err := Load([]byte(sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Stable() || m.Stability != "" {
+		t.Errorf("a manifest without the field is beta, got %q", m.Stability)
+	}
+
+	m, err = Load([]byte(`{"name":"tui-x","stability":"stable","stableSince":"1.0.0"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Stable() || m.StableSince != "1.0.0" {
+		t.Errorf("stable manifest read as %q since %q", m.Stability, m.StableSince)
+	}
+}
