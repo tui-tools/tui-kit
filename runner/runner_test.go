@@ -194,18 +194,135 @@ func TestRunFailureNamesThePreview(t *testing.T) {
 	}
 }
 
-func TestRunTimeout(t *testing.T) {
+// TestReadTimeout: a read is bounded, so a stuck query cannot freeze the UI.
+func TestReadTimeout(t *testing.T) {
 	// A busy loop rather than `sleep`, so the test does not depend on what
 	// the isolated PATH carries.
 	dir := fakeBin(t, "toolctl", "while : ; do : ; done")
+	t.Setenv("PATH", dir)
+	r, err := New(Options{Bin: "toolctl", Timeout: 100 * time.Millisecond,
+		PrivilegedReads: new(false)})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = r.Read(context.Background(), "toolctl", "wait")
+	if err == nil || !strings.Contains(err.Error(), "timed out after 100ms") {
+		t.Fatalf("error = %v, want a timeout", err)
+	}
+}
+
+// TestRunIsNotBoundByTheReadTimeout: a mutation outlives the read timeout of
+// its own runner. It is the regression test for a pacman download killed
+// mid-transaction by the timeout meant for reads.
+func TestRunIsNotBoundByTheReadTimeout(t *testing.T) {
+	dir := fakeBin(t, "toolctl", `/bin/sleep 0.5; echo "done: $*"`)
 	t.Setenv("PATH", dir)
 	r, err := New(Options{Bin: "toolctl", Timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	out, err := r.Run(context.Background(), Command{Argv: []string{"toolctl", "install"}})
+	if err != nil {
+		t.Fatalf("Run was cut short by the read timeout: %v", err)
+	}
+	if out != "done: install" {
+		t.Errorf("output = %q", out)
+	}
+}
+
+// TestNewDefaults: reads get DefaultTimeout, mutations get no limit.
+func TestNewDefaults(t *testing.T) {
+	dir := fakeBin(t, "toolctl", "true")
+	t.Setenv("PATH", dir)
+	r, err := New(Options{Bin: "toolctl"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if r.Timeout != DefaultTimeout || r.MutationTimeout != 0 {
+		t.Errorf("Timeout = %s, MutationTimeout = %s; want %s and none",
+			r.Timeout, r.MutationTimeout, DefaultTimeout)
+	}
+}
+
+// TestDefaultsAtFifteenSeconds is the issue's case at its real scale: with
+// the default options a mutation that runs past DefaultTimeout finishes, and
+// a read of the same length is killed at DefaultTimeout. It takes about 16 s,
+// so -short skips it; the two halves run in parallel.
+func TestDefaultsAtFifteenSeconds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("takes DefaultTimeout plus a second")
+	}
+	// The binary is found through SearchPaths rather than PATH, so the
+	// subtests need no t.Setenv and can run in parallel.
+	dir := fakeBin(t, "slowtoolctl", `/bin/sleep 16; echo finished`)
+	bin := filepath.Join(dir, "slowtoolctl")
+	newRunner := func(t *testing.T) *Runner {
+		t.Helper()
+		r, err := New(Options{Bin: "slowtoolctl", SearchPaths: []string{bin},
+			PrivilegedReads: new(false)})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		return r
+	}
+	t.Run("mutation finishes", func(t *testing.T) {
+		t.Parallel()
+		out, err := newRunner(t).Run(context.Background(),
+			Command{Argv: []string{"slowtoolctl", "install"}})
+		if err != nil || out != "finished" {
+			t.Errorf("Run = %q, %v; want it to finish", out, err)
+		}
+	})
+	t.Run("read is killed", func(t *testing.T) {
+		t.Parallel()
+		start := time.Now()
+		_, err := newRunner(t).Read(context.Background(), "slowtoolctl", "list")
+		if err == nil || !strings.Contains(err.Error(), "timed out after 15s") {
+			t.Errorf("Read error = %v, want a 15s timeout", err)
+		}
+		if took := time.Since(start); took > DefaultTimeout+2*time.Second {
+			t.Errorf("Read took %s", took)
+		}
+	})
+}
+
+// TestRunMutationTimeoutIsOptIn: a runner that asks for a mutation limit gets
+// one, and the message names it.
+func TestRunMutationTimeoutIsOptIn(t *testing.T) {
+	dir := fakeBin(t, "toolctl", "while : ; do : ; done")
+	t.Setenv("PATH", dir)
+	r, err := New(Options{Bin: "toolctl", MutationTimeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	_, err = r.Run(context.Background(), Command{Argv: []string{"toolctl", "wait"}})
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
+	if err == nil || !strings.Contains(err.Error(), "timed out after 100ms") {
 		t.Fatalf("error = %v, want a timeout", err)
+	}
+}
+
+// TestRunCancelSendsSIGTERM: cancelling a mutation asks it to stop, so a
+// package manager gets the chance to release its lock, instead of killing it.
+func TestRunCancelSendsSIGTERM(t *testing.T) {
+	dir := fakeBin(t, "toolctl",
+		`trap 'kill $!; echo cleaned up; exit 3' TERM; /bin/sleep 5 & wait`)
+	t.Setenv("PATH", dir)
+	r, err := New(Options{Bin: "toolctl"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	out, err := r.Run(ctx, Command{Argv: []string{"toolctl", "install"}})
+	if err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("error = %v, want the caller's deadline", err)
+	}
+	if !strings.Contains(out, "cleaned up") {
+		t.Errorf("the mutation was not given SIGTERM: output %q", out)
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("cancel took %s: it waited for the child instead of stopping it", took)
 	}
 }
 

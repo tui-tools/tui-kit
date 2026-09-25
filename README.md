@@ -96,6 +96,17 @@ guaranteed to be what executes. That is the whole trust boundary.
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
 
+Reads and mutations are timed differently. A read is bounded by
+`Options.Timeout` (default `runner.DefaultTimeout`, 15 s), so a stuck query
+cannot freeze the UI. A mutation (`Run`) has no wall-clock timeout unless the
+runner sets `Options.MutationTimeout`: it is what the user confirmed, and a
+package manager killed mid-transaction leaves its lock behind (pacman's
+`db.lck`, dpkg's lock) for every later call to trip over. A mutation stops only
+when the caller cancels its context, and then it gets SIGTERM and
+`runner.MutationGrace` to clean up before SIGKILL. While one runs, a tool shows
+`ui.RunningMessage` in its status line, redrawn by `ui.RunningTick`, so a
+five-minute install does not look like a frozen screen.
+
 The dialog is held to the same standard as the runner. `ui.Confirm` wraps its
 body and its command preview to the dialog's inner width instead of clipping
 them — a command whose tail is invisible is a command nobody can check — and
