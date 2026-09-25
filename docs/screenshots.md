@@ -67,7 +67,8 @@ tui-kit/tools/render-screenshots.py \
 - `--title` adds a window bar with the given text above the frame, useful to
   say which host a frame came from. It works in the binary mode as well;
   without it the page is exactly the README one.
-- The Chrome window is fitted to the frame. `--window W,H` overrides it.
+- The Chrome window is fitted to the frame. `--window W,H` sets a minimum
+  in both modes; the window still grows when the frame needs more room.
 
 The renderer understands what `capture-pane -e` emits: the 16 basic colors
 (mapped to the Tokyo Night palette), 256 colors and truecolor, in the
@@ -75,3 +76,18 @@ semicolon or the colon form, plus bold, dim, italic, underline and reverse.
 Dim blends the foreground toward the cell background, the way terminals draw
 faint text. Cells with the default colors take the frame's foreground and
 background.
+
+## How a frame is drawn
+
+The page is a fixed grid, not flowing text. Every row is a block exactly one
+cell (18px) high and every cell a box exactly one column (9px) wide, two for
+an East Asian wide glyph, with the text in a 15px monospace font. So rows
+touch, columns line up whatever the font does with bold or fallback glyphs,
+and trailing spaces are kept. Ambiguous-width characters (box drawing, the
+middle dot) take one column, as in tmux outside a CJK locale.
+
+Box drawing characters (U+2500 to U+257F) are not typed with the font: few
+fonts make those glyphs fill the whole cell height, which left a gap on every
+row of a dialog border. Each one is drawn as lines in its cell (light, heavy,
+double, rounded corners and diagonals; dashed lines come out solid), in the
+cell's foreground color, so borders are continuous.

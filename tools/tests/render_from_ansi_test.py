@@ -39,6 +39,19 @@ def fixture(name: str) -> bytes:
         return fh.read()
 
 
+def runs(body: str) -> list[tuple[str, str]]:
+    """The styled runs of a body as (css, text), cell tags stripped."""
+    return [(css, re.sub(r"<[^>]+>", "", inner))
+            for css, inner in re.findall(
+                r'<span style="([^"]*)">((?:<c[^>]*>[^<]*</c>)*)</span>', body)]
+
+
+def row_cells(row: str) -> int:
+    """Columns one rendered row occupies: a cell is 1, a wide cell 2."""
+    return (len(re.findall(r"<c[ >]", row))
+            + len(re.findall(r'<c class="w">', row)))
+
+
 def plain(body: str) -> list[str]:
     """The rows of a rendered body as plain text, spans stripped."""
     text = re.sub(r"<[^>]+>", "", body)
@@ -83,7 +96,8 @@ class CaptureFixtureTest(unittest.TestCase):
     def test_default_colors_are_left_to_the_page(self):
         # Unstyled cells carry no color, so the frame's own fg/bg shows.
         first = self.body.split("\n")[0]
-        self.assertTrue(first.startswith(" <span"), first[:40])
+        self.assertTrue(first.startswith('<div class="r"><c> </c><span'),
+                        first[:60])
         self.assertIn(renderer.DEFAULT_BG, renderer.page_html(self.body))
         self.assertIn(renderer.DEFAULT_FG, renderer.page_html(self.body))
 
@@ -91,13 +105,38 @@ class CaptureFixtureTest(unittest.TestCase):
         # Every border glyph of the real dialog capture comes out in the
         # accent color, none of it falls back to the default foreground.
         body, _, _ = renderer.capture_html(fixture("tailscale-dialog.ansi"))
-        styled = re.findall(r'<span style="([^"]*)">([^<]*)</span>', body)
-        borders = [css for css, text in styled if "│" in text]
+        borders = [css for css, text in runs(body) if "│" in text]
         self.assertGreater(len(borders), 20)
         self.assertTrue(all("color:#79a2f7;" in css for css in borders))
         # Nothing outside a span is a border glyph.
-        bare = re.sub(r"<span[^>]*>[^<]*</span>", "", body)
-        self.assertFalse(set(bare) & set("╭╮╰╯│─"))
+        bare = re.sub(r"<span[^>]*>(?:<c[^>]*>[^<]*</c>)*</span>", "", body)
+        self.assertFalse(set(re.sub(r"<[^>]+>", "", bare)) & set("╭╮╰╯│─"))
+
+    def test_every_dialog_row_has_the_same_cell_count(self):
+        # The regression behind fixed-width cells: bold and fallback glyphs
+        # pushed the right border of some rows one cell off.
+        for name in ("tailscale-dialog.ansi", "tailscale-main.ansi"):
+            body, cols, rows = renderer.capture_html(fixture(name))
+            counts = [row_cells(row) for row in body.split("\n")]
+            self.assertEqual(len(counts), rows, name)
+            self.assertEqual(set(counts), {cols}, name)
+            # Trailing spaces are cells too; nothing is stripped.
+            self.assertTrue(all(len(line) == cols for line in plain(body)),
+                            name)
+
+    def test_box_drawing_is_drawn_not_typed(self):
+        # Border cells carry a vector drawing in the border color that fills
+        # the whole cell, and hide the font glyph, so rows touch.
+        body, _, _ = renderer.capture_html(fixture("tailscale-dialog.ansi"))
+        cells = re.findall(r'<c class="b" style="([^"]*)">(.)</c>', body)
+        glyphs = {glyph for _, glyph in cells}
+        self.assertEqual(glyphs, set("╭╮╰╯│─"))
+        for css, _ in cells:
+            self.assertIn("data:image/svg+xml", css)
+            self.assertIn("%2379a2f7", css)
+        page = renderer.page_html(body)
+        self.assertIn("c.b{color:transparent;background-size:100% 100%", page)
+        self.assertIn(".r{height:18px;", page)
 
 
 class CropAndSizeTest(unittest.TestCase):
@@ -119,13 +158,13 @@ class CropAndSizeTest(unittest.TestCase):
         body, _, rows = renderer.capture_html(
             raw, crop=renderer.parse_crop("1:"))
         self.assertEqual(rows, 2)
-        self.assertIn('<span style="color:#010203;">still</span>', body)
+        self.assertIn(("color:#010203;", "still"), runs(body))
 
     def test_explicit_size_pads_and_clips(self):
         body, cols, rows = renderer.capture_html(b"abcdef\nxy\n", cols=4,
                                                  rows=3)
         self.assertEqual((cols, rows), (4, 3))
-        self.assertEqual(plain(body), ["abcd", "xy", ""])
+        self.assertEqual(plain(body), ["abcd", "xy  ", "    "])
 
     def test_size_is_capped(self):
         raw = ("x" * 1000 + "\n").encode() * 500
@@ -154,8 +193,8 @@ class AttributeTest(unittest.TestCase):
         body = self.render(b"\x1b[2mfaint\x1b[22m normal\n")
         dim = renderer.blend(renderer.DEFAULT_FG, renderer.DEFAULT_BG,
                              renderer.DIM_RATIO)
-        self.assertIn(f'<span style="color:{dim};">faint</span>', body)
-        self.assertNotIn(f"color:{dim}", body.split("faint")[1])
+        self.assertEqual(runs(body)[0], (f"color:{dim};", "faint"))
+        self.assertEqual(len(runs(body)), 1)
 
     def test_dim_on_an_explicit_color_and_background(self):
         body = self.render(b"\x1b[2;38;2;255;255;255;48;2;0;0;0mx\n")
@@ -164,7 +203,8 @@ class AttributeTest(unittest.TestCase):
     def test_bold_off_also_ends_dim(self):
         body = self.render(b"\x1b[1;2mab\x1b[22mcd\n")
         self.assertIn("font-weight:bold;", body)
-        self.assertIn("ab</span>cd", body)
+        self.assertEqual(runs(body)[0][1], "ab")
+        self.assertIn("<c>c</c><c>d</c>", body)
 
     def test_reverse_swaps_default_colors(self):
         body = self.render(b"\x1b[7m sel \x1b[27m\n")
@@ -185,6 +225,42 @@ class AttributeTest(unittest.TestCase):
 
     def test_wide_characters_count_two_columns(self):
         self.assertEqual(renderer.visible_width("\x1b[1m日本\x1b[0m"), 4)
+        # Box drawing is East Asian Ambiguous: one column, as in tmux.
+        self.assertEqual(renderer.visible_width("╭─│·"), 4)
+        body, cols, _ = renderer.capture_html("日a本\n".encode())
+        self.assertEqual(cols, 5)
+        self.assertIn('<c class="w">日</c><c>a</c><c class="w">本</c>', body)
+        self.assertEqual(row_cells(body), 5)
+
+    def test_combining_marks_join_their_cell(self):
+        body, cols, _ = renderer.capture_html("e\u0301x\n".encode())
+        self.assertEqual(cols, 2)
+        self.assertIn("<c>e\u0301</c><c>x</c>", body)
+
+
+class BoxDrawingTest(unittest.TestCase):
+    """The arms read from the Unicode names of U+2500-U+257F."""
+
+    def test_arms_and_weights(self):
+        arms = renderer.box_arms
+        self.assertEqual(arms("─"), ({"l": 1, "r": 1}, "line"))
+        self.assertEqual(arms("┃"), ({"u": 2, "d": 2}, "line"))
+        self.assertEqual(arms("┍"), ({"d": 1, "r": 2}, "line"))
+        self.assertEqual(arms("╒"), ({"d": 1, "r": 3}, "line"))
+        self.assertEqual(arms("╬"), ({"u": 3, "d": 3, "l": 3, "r": 3},
+                                     "line"))
+        self.assertEqual(arms("╭"), ({"d": 1, "r": 1}, "arc"))
+        self.assertEqual(arms("╼"), ({"l": 1, "r": 2}, "line"))
+        # A dashed line is drawn solid, not as a double one.
+        self.assertEqual(arms("┅"), ({"l": 2, "r": 2}, "line"))
+        self.assertEqual(arms("╳"), ({}, "diagonal"))
+        self.assertIsNone(arms("a"))
+
+    def test_every_box_character_draws_something(self):
+        for code in range(0x2500, 0x2580):
+            image = renderer.box_image(chr(code), "#ffffff")
+            self.assertIsNotNone(image, hex(code))
+            self.assertIn("path", image, hex(code))
 
 
 class PageTest(unittest.TestCase):
@@ -199,6 +275,12 @@ class PageTest(unittest.TestCase):
         self.assertNotIn("border-radius:50%", page)
         self.assertEqual(page, renderer.PAGE.replace("{bar}", "")
                          .replace("{body}", "x"))
+
+    def test_requested_window_is_a_minimum(self):
+        fitted = renderer.auto_window(104, 26)
+        self.assertEqual(renderer.fit_window("", 104, 26), fitted)
+        self.assertEqual(renderer.fit_window("2000,100", 104, 26),
+                         "2000," + fitted.split(",")[1])
 
     def test_window_fits_the_frame(self):
         width, height = map(int, renderer.auto_window(120, 32).split(","))

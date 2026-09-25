@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import functools
 import html
 import math
 import os
@@ -50,6 +51,7 @@ import sys
 import termios
 import time
 import unicodedata
+import urllib.parse
 from collections import namedtuple
 
 DEFAULT_COLS, DEFAULT_ROWS = 104, 26
@@ -62,9 +64,10 @@ DEFAULT_FG, DEFAULT_BG = "#c0caf5", "#1a1b26"
 # How much of the foreground survives the dim (faint) attribute: the color is
 # blended toward the cell background, the way terminals render SGR 2.
 DIM_RATIO = 0.55
-# Glyph metrics of the page font (14px, line-height 1.28) and the space the
-# page adds around the text, used to size the Chrome window for a capture.
-CELL_W, CELL_H = 8.43, 17.92
+# Cell metrics of the page: a 15px font in whole-pixel 9x18 cells, so that
+# neighbouring cells meet on a pixel edge and drawn lines show no seams. With
+# the space the page adds around the text they size the Chrome window.
+CELL_W, CELL_H = 9, 18
 PAD_W, PAD_H, TITLE_H = 88, 80, 26
 # The virtual screen size, overridden by --cols/--rows. Module-level because
 # the ANSI replay indexes the frame buffer with them.
@@ -324,28 +327,181 @@ def replay(raw: bytes, cols: int | None = None,
         elif ch == "\n":
             r = min(rows_n - 1, r + 1)
         elif ch >= " ":
-            if c < cols and r < rows_n:
-                rows[r][c] = (ch, st if st != PLAIN else None)
-            c += 1
+            cell_style = st if st != PLAIN else None
+            width = char_width(ch)
+            if width == 0:
+                # A combining mark or a joiner belongs to the cell before it.
+                if 0 < c <= cols and r < rows_n:
+                    prev, prev_style = rows[r][c - 1]
+                    rows[r][c - 1] = (prev + ch, prev_style)
+            else:
+                if c < cols and r < rows_n:
+                    rows[r][c] = (ch, cell_style)
+                    if width == 2 and c + 1 < cols:
+                        # The right half of a wide glyph: an empty cell the
+                        # page skips, so the row keeps its column count.
+                        rows[r][c + 1] = ("", cell_style)
+                c += width
         i += 1
     return rows
 
 
+def char_width(ch: str) -> int:
+    """Terminal columns of one character: 0, 1 or 2.
+
+    East Asian Wide and Fullwidth characters take two columns. Ambiguous ones
+    (box drawing, the middle dot) take one, as in tmux and every terminal
+    outside a CJK locale.
+    """
+    if unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Me",
+                                                                 "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+# Box drawing (U+2500-U+257F) is drawn as vector lines instead of font
+# glyphs: few fonts make their glyphs fill the whole cell height, so borders
+# came out as dashes with a gap on every row. The geometry comes from the
+# Unicode names, e.g. "BOX DRAWINGS DOWN LIGHT AND RIGHT HEAVY".
+BOX_WEIGHTS = {"LIGHT": 1, "SINGLE": 1, "HEAVY": 2, "DOUBLE": 3}
+BOX_ARMS = {"UP": "u", "DOWN": "d", "LEFT": "l", "RIGHT": "r",
+            "VERTICAL": "ud", "HORIZONTAL": "lr"}
+# The drawing is in page pixels, one cell (CELL_W x CELL_H). The center sits on
+# a pixel center so a 1px light line and a 3px heavy one stay crisp.
+BOX_W, BOX_H = 9, 18
+BOX_CX, BOX_CY = 4.5, 8.5
+BOX_STROKE = {1: 1, 2: 3}
+
+
+def box_arms(ch: str) -> tuple[dict[str, int], str] | None:
+    """The arms of a box drawing character and its shape.
+
+    Returns ({arm: weight}, shape) with arms among u/d/l/r, weights 1 light,
+    2 heavy, 3 double, and shape "line", "arc" or "diagonal".
+    """
+    if len(ch) != 1 or not 0x2500 <= ord(ch) <= 0x257F:
+        return None
+    name = unicodedata.name(ch, "")
+    if not name.startswith("BOX DRAWINGS "):
+        return None
+    words = name[len("BOX DRAWINGS "):].split()
+    if "DIAGONAL" in words:
+        return {}, "diagonal"
+    shape = "arc" if "ARC" in words else "line"
+    # "DOUBLE DASH" and friends describe dashes, not a double line; the
+    # dashes themselves are drawn solid.
+    if "DASH" in words:
+        k = words.index("DASH")
+        del words[k - 1:k + 1]
+    arms: dict[str, int] = {}
+    weight = 1
+    for clause in " ".join(words).split(" AND "):
+        tokens = clause.split()
+        clause_weight = next(
+            (BOX_WEIGHTS[t] for t in tokens if t in BOX_WEIGHTS), weight)
+        for token in tokens:
+            for arm in BOX_ARMS.get(token, ""):
+                arms[arm] = clause_weight
+        weight = clause_weight
+    return arms, shape
+
+
+@functools.lru_cache(maxsize=None)
+def box_image(ch: str, color: str) -> str | None:
+    """A CSS background-image drawing a box character in one cell."""
+    parsed = box_arms(ch)
+    if parsed is None:
+        return None
+    arms, shape = parsed
+    cx, cy = BOX_CX, BOX_CY
+    ends = {"u": (cx, 0), "d": (cx, BOX_H), "l": (0, cy), "r": (BOX_W, cy)}
+    paths: list[tuple[str, float]] = []
+    if shape == "diagonal":
+        if ch in "╱╳":
+            paths.append((f"M{BOX_W} 0L0 {BOX_H}", 1))
+        if ch in "╲╳":
+            paths.append((f"M0 0L{BOX_W} {BOX_H}", 1))
+    elif shape == "arc":
+        # One vertical and one horizontal arm, joined by a quarter curve.
+        v = "u" if "u" in arms else "d"
+        h = "l" if "l" in arms else "r"
+        vx, vy = ends[v]
+        hx, hy = ends[h]
+        radius = 4
+        sy = cy + (radius if v == "d" else -radius)
+        sx = cx + (radius if h == "r" else -radius)
+        paths.append((f"M{vx} {vy}L{cx} {sy}Q{cx} {cy} {sx} {cy}L{hx} {hy}",
+                       BOX_STROKE[1]))
+    else:
+        for arm, weight in arms.items():
+            x, y = ends[arm]
+            if weight == 3:
+                # Two thin lines either side of the center line.
+                for off in (-2, 2):
+                    if arm in "ud":
+                        paths.append((f"M{cx + off} {cy}L{x + off} {y}", 1))
+                    else:
+                        paths.append((f"M{cx} {cy + off}L{x} {y + off}", 1))
+            else:
+                paths.append((f"M{cx} {cy}L{x} {y}", BOX_STROKE[weight]))
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' width='{BOX_W}' "
+           f"height='{BOX_H}' viewBox='0 0 {BOX_W} {BOX_H}'>" + "".join(
+               f"<path d='{d}' stroke='{color}' stroke-width='{w}' "
+               "stroke-linecap='square' fill='none'/>" for d, w in paths)
+           + "</svg>")
+    return "url(\"data:image/svg+xml," + urllib.parse.quote(svg, safe="=:/' ") \
+        + "\")"
+
+
+def cell_colors(st) -> tuple[str, str | None]:
+    """The foreground a cell is drawn in, and its background if it has one."""
+    if not st:
+        return DEFAULT_FG, None
+    css = style_css(st)
+    fg = re.search(r"(?:^|;)color:(#[0-9a-f]{6})", css)
+    bg = re.search(r"background:(#[0-9a-f]{6})", css)
+    return (fg.group(1) if fg else DEFAULT_FG), (bg.group(1) if bg else None)
+
+
 def grid_html(rows: list[list[tuple]]) -> str:
-    """Turn a replayed grid into the <pre> body of the page."""
+    """Turn a replayed grid into the body of the page.
+
+    Every row is a block exactly one cell high and every cell an inline box
+    exactly one column wide (two for a wide glyph), so rows touch, the columns
+    line up whatever the font does with bold or fallback glyphs, and trailing
+    spaces never collapse.
+    """
     lines = []
     for row in rows:
-        line, cur, buf, css = "", object(), "", ""
-        for ch, st in row:
-            if st != cur:
-                if buf:
-                    line += f'<span style="{css}">{html.escape(buf)}</span>' if css else html.escape(buf)
-                buf, cur = "", st
-                css = style_css(st) if st else ""
-            buf += ch
-        if buf:
-            line += f'<span style="{css}">{html.escape(buf)}</span>' if css else html.escape(buf)
-        lines.append(line.rstrip())
+        runs: list[tuple] = []
+        k = 0
+        while k < len(row):
+            ch, st = row[k]
+            wide = (ch and char_width(ch[0]) == 2 and k + 1 < len(row)
+                    and row[k + 1][0] == "")
+            cell = (ch or " ", st, 2 if wide else 1)
+            if runs and runs[-1][0] == st:
+                runs[-1][1].append(cell)
+            else:
+                runs.append((st, [cell]))
+            k += 2 if wide else 1
+        line = ""
+        for st, cells in runs:
+            css = style_css(st) if st else ""
+            fg, _ = cell_colors(st)
+            inner = ""
+            for ch, _, width in cells:
+                image = box_image(ch, fg)
+                if image:
+                    attr = html.escape(f"background-image:{image}")
+                    inner += (f'<c class="b" style="{attr}">'
+                              f"{html.escape(ch)}</c>")
+                elif width == 2:
+                    inner += f'<c class="w">{html.escape(ch)}</c>'
+                else:
+                    inner += f"<c>{html.escape(ch)}</c>"
+            line += f'<span style="{css}">{inner}</span>' if css else inner
+        lines.append(f'<div class="r">{line}</div>')
     return "\n".join(lines)
 
 
@@ -358,12 +514,7 @@ SGR_RE = re.compile(r"\x1b\[[0-9;:?]*[A-Za-z]")
 
 def visible_width(line: str) -> int:
     """Terminal columns a captured line occupies, SGR sequences excluded."""
-    width = 0
-    for ch in SGR_RE.sub("", line):
-        if ch < " " or unicodedata.combining(ch):
-            continue
-        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
-    return width
+    return sum(char_width(ch) for ch in SGR_RE.sub("", line) if ch >= " ")
 
 
 def drawn_width(row: list[tuple]) -> int:
@@ -416,7 +567,14 @@ def capture_html(raw: bytes, cols: int | None = None, rows: int | None = None,
 
 PAGE = """<html><body style="margin:0;background:#0f0f14;padding:24px;font-family:'Noto Sans Mono','JetBrains Mono',monospace">
 <div style="display:inline-block;background:#1a1b26;color:#c0caf5;border-radius:10px;padding:16px 20px;box-shadow:0 8px 30px #0008">{bar}
-<pre style="margin:0;font:14px/1.28 'Noto Sans Mono','JetBrains Mono',monospace;white-space:pre">{body}</pre></div></body></html>"""
+<style>
+.t{font:15px/18px 'Noto Sans Mono','JetBrains Mono','DejaVu Sans Mono',monospace}
+.r{height:18px;white-space:pre;overflow:hidden}
+c{display:inline-block;width:9px;height:18px;vertical-align:top;overflow:hidden;text-align:center}
+c.w{width:18px}
+c.b{color:transparent;background-size:100% 100%;background-repeat:no-repeat}
+</style>
+<div class="t">{body}</div></div></body></html>"""
 
 # The window bar a --title adds on top of the frame: three dots and the title,
 # in the same palette, so a guide can say which host a frame came from.
@@ -435,6 +593,17 @@ def auto_window(cols: int, rows: int, title: str = "") -> str:
     """A Chrome window just large enough for a cols x rows frame."""
     width = math.ceil(cols * CELL_W) + PAD_W + 2
     height = math.ceil(rows * CELL_H) + PAD_H + 2 + (TITLE_H if title else 0)
+    return f"{width},{height}"
+
+
+def fit_window(requested: str, cols: int, rows: int, title: str = "") -> str:
+    """The window to shoot: at least the requested W,H, never smaller than
+    the frame, so a size a tool's Makefile pinned for the old, narrower
+    cells cannot clip the right edge."""
+    width, height = map(int, auto_window(cols, rows, title).split(","))
+    if requested:
+        want_w, want_h = map(int, requested.split(","))
+        width, height = max(width, want_w), max(height, want_h)
     return f"{width},{height}"
 
 
@@ -485,7 +654,7 @@ def render_captures(args, chrome: str) -> int:
                                             crop)
         name = os.path.splitext(os.path.basename(path))[0]
         png = os.path.join(args.out, f"{name}.png")
-        window = args.window or auto_window(cols, rows, args.title)
+        window = fit_window(args.window, cols, rows, args.title)
         screenshot(chrome, page_html(body, args.title), png, window)
         print(png)
     return 0
@@ -511,8 +680,7 @@ def render_binary(args, chrome: str) -> int:
         frame = to_html(capture(binary, tool_args, parse_keys(keys),
                                 args.settle, args.budget))
         png = os.path.join(args.out, f"{prefix}-{name}.png")
-        window = args.window or (
-            f"1000,{540 + TITLE_H}" if args.title else "1000,540")
+        window = fit_window(args.window, COLS, ROWS, args.title)
         screenshot(chrome, page_html(frame, args.title), png, window)
         print(png)
     return 0
@@ -552,8 +720,8 @@ def main() -> int:
     ap.add_argument("--budget", type=float, default=5.0,
                     help="seconds to keep the tool running")
     ap.add_argument("--window", default="",
-                    help="headless Chrome window size (binary: 1000,540; "
-                         "capture: fitted to the frame)")
+                    help="minimum headless Chrome window size, W,H; the "
+                         "window always grows to fit the frame")
     args = ap.parse_args()
     if args.crop_rows and not args.from_ansi:
         ap.error("--crop-rows only applies to --from-ansi")
