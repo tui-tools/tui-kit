@@ -96,6 +96,17 @@ guaranteed to be what executes. That is the whole trust boundary.
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
 
+Reads and mutations are timed differently. A read is bounded by
+`Options.Timeout` (default `runner.DefaultTimeout`, 15 s), so a stuck query
+cannot freeze the UI. A mutation (`Run`) has no wall-clock timeout unless the
+runner sets `Options.MutationTimeout`: it is what the user confirmed, and a
+package manager killed mid-transaction leaves its lock behind (pacman's
+`db.lck`, dpkg's lock) for every later call to trip over. A mutation stops only
+when the caller cancels its context, and then it gets SIGTERM and
+`runner.MutationGrace` to clean up before SIGKILL. While one runs, a tool shows
+`ui.RunningMessage` in its status line, redrawn by `ui.RunningTick`, so a
+five-minute install does not look like a frozen screen.
+
 The dialog is held to the same standard as the runner. `ui.Confirm` wraps its
 body and its command preview to the dialog's inner width instead of clipping
 them — a command whose tail is invisible is a command nobody can check — and
@@ -204,6 +215,15 @@ The contract, in short:
   command line in the dialog is the command line that runs. A read is never
   marked privileged: listing what is installed must not raise a password
   prompt.
+- **Arch and Omarchy.** On Arch an install or upgrade is `pacman -Syu` with the
+  names, because a partial upgrade is not supported there. Omarchy refuses that:
+  its pacman hook aborts any direct `-Syu` that does not come from
+  `omarchy update`. `Distro.Omarchy()` recognises it (an os-release `ID` or
+  `ID_LIKE` starting with `omarchy`, or the guard hook being installed), and
+  `Install`/`Upgrade` then build `pacman -S --needed --noconfirm` with the
+  names, against the databases the repository setup's `-Sy` or the last
+  `omarchy update` synced, with an explanation that says the system itself
+  upgrades through `omarchy update`, not here (`OmarchyNote`).
 - **Repository.** `RepoStatus` reports whether `pkgs.tui.tools` is configured —
   an apt sources file naming it, a dnf `.repo`, or a `[tui-tools]` section
   reachable from `/etc/pacman.conf`, including through an `Include`.

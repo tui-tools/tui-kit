@@ -1,0 +1,9 @@
+NAME="Omarchy"
+PRETTY_NAME="Omarchy"
+ID=omarchy
+ID_LIKE=arch
+BUILD_ID="4.0.0.alpha"
+VERSION_ID="4.0.0.alpha"
+ANSI_COLOR="38;2;158;206;106"
+HOME_URL="https://omarchy.org/"
+LOGO=omarchy

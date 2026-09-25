@@ -294,7 +294,8 @@ func BuildRefresh(manager Manager) (Command, error) {
 // apt is given a refresh first, because a repository that was added a moment
 // ago is invisible to it until its lists are fetched; dnf refreshes an expired
 // cache on its own; pacman refreshes and upgrades in the one step Arch
-// supports. Every step is privileged, every step is previewed, and the
+// supports. Omarchy refuses that step, so a caller that knows the distribution
+// goes through BuildInstallOn, which gives it BuildInstallOmarchy. Every step is privileged, every step is previewed, and the
 // sequence stops at the first one that fails.
 func BuildInstall(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
@@ -336,6 +337,76 @@ func BuildInstall(manager Manager, names []string) ([]Command, error) {
 	}
 }
 
+// BuildInstallOn is BuildInstall for a known distribution. It differs only on
+// Omarchy (Distro.Omarchy), where the plan is BuildInstallOmarchy; everywhere
+// else it is BuildInstall.
+func BuildInstallOn(manager Manager, distro Distro, names []string) ([]Command, error) {
+	if manager == ManagerPacman && distro.Omarchy() {
+		return BuildInstallOmarchy(names)
+	}
+	return BuildInstall(manager, names)
+}
+
+// BuildUpgradeOn is BuildUpgrade for a known distribution, with the same one
+// exception as BuildInstallOn: Omarchy gets BuildUpgradeOmarchy.
+func BuildUpgradeOn(manager Manager, distro Distro, names []string) ([]Command, error) {
+	if manager == ManagerPacman && distro.Omarchy() {
+		return BuildUpgradeOmarchy(names)
+	}
+	return BuildUpgrade(manager, names)
+}
+
+// OmarchyNote is the part of an Omarchy step's explanation that says why it
+// is not the -Syu the rest of the Arch family gets. It is exported so a UI
+// that writes its own sentence above the preview can say the same thing when
+// Distro.Omarchy reports true.
+const OmarchyNote = "Omarchy upgrades the system itself only through " +
+	"`omarchy update` (its pacman hook refuses a direct -Syu), so this " +
+	"installs against the package databases the last refresh synced, " +
+	"without upgrading the system here. If pacman cannot find a package " +
+	"file, run `omarchy update` first."
+
+// BuildInstallOmarchy builds the install on Omarchy: `pacman -S --needed
+// --noconfirm` with the names, as one step.
+//
+// Omarchy refuses a direct system upgrade: the pacman hook its `omarchy`
+// package installs (OmarchyGuardHook) aborts any -Syu that does not come from
+// `omarchy update`, which syncs the databases and upgrades the machine as one
+// transaction with a snapshot and migrations around it. What is left is to
+// install against the databases the last sync left — the repository setup's
+// own `-Sy`, or the last `omarchy update` — with no -y here, so no newer
+// database is pulled under packages the machine has not upgraded.
+func BuildInstallOmarchy(names []string) ([]Command, error) {
+	if err := CheckNames(names); err != nil {
+		return nil, err
+	}
+	return []Command{{
+		Argv: append([]string{
+			"pacman", "-S", "--needed", "--noconfirm",
+		}, names...),
+		Privileged: true,
+		Explain:    "Install " + strings.Join(names, ", ") + ". " + OmarchyNote,
+	}}, nil
+}
+
+// BuildUpgradeOmarchy builds the upgrade on Omarchy: the same `-S --needed`
+// as the install, which brings each named package to the version the synced
+// databases carry. A newer version shows up there after `omarchy update` (or
+// the repository setup) refreshed them, which is also when the launcher, which
+// reads the same databases, offers the upgrade at all.
+func BuildUpgradeOmarchy(names []string) ([]Command, error) {
+	if err := CheckNames(names); err != nil {
+		return nil, err
+	}
+	return []Command{{
+		Argv: append([]string{
+			"pacman", "-S", "--needed", "--noconfirm",
+		}, names...),
+		Privileged: true,
+		Explain:    "Upgrade " + strings.Join(names, ", ") + ". " + OmarchyNote,
+	}}, nil
+}
+
 // BuildRemove builds the steps that take the named packages off the machine.
 // Nothing else is removed with them: the dependencies a tool pulled in are
 // left alone, because an autoremove decided by a launcher is how an unrelated
@@ -373,7 +444,8 @@ func BuildRemove(manager Manager, names []string) ([]Command, error) {
 // On pacman that is `-Syu` with the names: Arch has no supported way to
 // upgrade one package against a refreshed database without upgrading the
 // machine with it, and pretending otherwise is how a partial upgrade breaks a
-// system. The other two upgrade only what was asked for.
+// system. The other two upgrade only what was asked for. Omarchy refuses the
+// -Syu; BuildUpgradeOn gives it BuildUpgradeOmarchy.
 func BuildUpgrade(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err

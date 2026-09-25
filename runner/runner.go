@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -28,9 +29,25 @@ import (
 // Errors wrapping it carry a message meant to be shown to the user verbatim.
 var ErrNotAvailable = errors.New("command not available")
 
-// DefaultTimeout bounds one invocation, so a stuck command cannot freeze the
-// UI behind it.
+// DefaultTimeout bounds one read, so a stuck query cannot freeze the UI
+// behind it.
+//
+// It bounds reads only. A mutation (Run) has no wall-clock timeout unless the
+// runner is given one (Options.MutationTimeout): a mutation is the command the
+// user confirmed, and killing it halfway is worse than letting it finish. A
+// package manager killed during a download or a transaction leaves its lock
+// behind (pacman's db.lck, dpkg's lock, a half-configured package, a stale dnf
+// transaction), and every later call fails until someone cleans up by hand.
+// That happened for real: a `pacman -Syu` downloading a few dozen packages was
+// killed at 15 s. A mutation stops only when the caller cancels its context,
+// and even then it is asked to stop (SIGTERM, see MutationGrace) before it is
+// killed.
 const DefaultTimeout = 15 * time.Second
+
+// MutationGrace is how long a cancelled mutation is given to stop on its own
+// after SIGTERM before it is killed. sudo relays the signal to the command, and
+// pacman, apt and dnf all clean up their locks on SIGTERM; SIGKILL leaves them.
+const MutationGrace = 10 * time.Second
 
 // Command is a single invocation the user is about to run. Argv excludes any
 // privilege wrapper: the Runner adds it when previewing and when executing.
@@ -77,8 +94,13 @@ type Options struct {
 	// SudoPrefix is the escalation command line, split into argv
 	// ("sudo", "-n"). Empty runs Bin directly.
 	SudoPrefix []string
-	// Timeout bounds one invocation; zero uses DefaultTimeout.
+	// Timeout bounds one read (Read); zero uses DefaultTimeout.
 	Timeout time.Duration
+	// MutationTimeout bounds one mutation (Run, privileged or not). Zero, the
+	// default, means no wall-clock limit: a mutation ends when it finishes or
+	// when the caller cancels its context. See DefaultTimeout for why. Set it
+	// only for a mutation that can legitimately hang and is safe to stop.
+	MutationTimeout time.Duration
 	// PrivilegedReads reports whether Read also needs escalation. It
 	// defaults to true, which is the safe answer: a tool whose reads work
 	// unprivileged (systemctl) sets it to false explicitly.
@@ -100,8 +122,10 @@ type Runner struct {
 	Name string
 	// Privilege is the resolved escalation prefix; nil when running directly.
 	Privilege []string
-	// Timeout bounds each invocation.
+	// Timeout bounds each read.
 	Timeout time.Duration
+	// MutationTimeout bounds each mutation; zero means none.
+	MutationTimeout time.Duration
 
 	privilegedReads bool
 	env             []string
@@ -159,6 +183,7 @@ func New(opts Options) (*Runner, error) {
 		Bin:             bin,
 		Name:            opts.Bin,
 		Timeout:         timeout,
+		MutationTimeout: max(opts.MutationTimeout, 0),
 		privilegedReads: privilegedReads,
 		env:             env,
 	}
@@ -213,29 +238,41 @@ func (r *Runner) argv(cmd Command, privileged bool) (bin string, args []string) 
 	return r.Privilege[0], append(prefix, append([]string{r.Bin}, rest...)...)
 }
 
-// Run executes a previewed command with escalation.
+// Run executes a previewed command with escalation. It is a mutation: no
+// wall-clock timeout applies unless MutationTimeout is set, and cancelling ctx
+// sends SIGTERM first, SIGKILL only after MutationGrace.
 func (r *Runner) Run(ctx context.Context, cmd Command) (string, error) {
-	return r.exec(ctx, cmd, true)
+	return r.exec(ctx, cmd, true, r.MutationTimeout, true)
 }
 
 // Read runs a read-only invocation. It escalates only when the runner was
 // built with PrivilegedReads (the default): `ufw status` needs root, while
 // `systemctl list-units` does not.
 func (r *Runner) Read(ctx context.Context, argv ...string) (string, error) {
-	return r.exec(ctx, Command{Argv: argv}, r.privilegedReads)
-}
-
-// exec runs one invocation and returns its combined output, trimmed.
-func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool) (string, error) {
 	timeout := r.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	return r.exec(ctx, Command{Argv: argv}, r.privilegedReads, timeout, false)
+}
+
+// exec runs one invocation and returns its combined output, trimmed. A zero
+// timeout means no deadline beyond the caller's context. A mutation is stopped
+// gently: SIGTERM when the context ends, SIGKILL only after MutationGrace.
+func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
+	timeout time.Duration, mutation bool) (string, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	bin, args := r.argv(cmd, privileged)
 	c := exec.CommandContext(ctx, bin, args...) //nolint:gosec // argv is built here, never from a shell string
+	if mutation {
+		c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
+		c.WaitDelay = MutationGrace
+	}
 	c.Env = append(os.Environ(), r.env...)
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
@@ -248,17 +285,22 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool) (string
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = ctxErr
 		}
-		return text, r.wrapErr(cmd, text, err)
+		return text, r.wrapErr(cmd, text, err, timeout)
 	}
 	return text, nil
 }
 
 // wrapErr turns an exec failure into a message worth putting in a status line:
 // one line, naming the command the user saw in the preview.
-func (r *Runner) wrapErr(cmd Command, output string, err error) error {
+func (r *Runner) wrapErr(cmd Command, output string, err error,
+	timeout time.Duration) error {
 	preview := r.Preview(cmd)
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("`%s` timed out after %s", preview, r.Timeout)
+		if timeout <= 0 {
+			// The caller's own deadline, not one the runner set.
+			return fmt.Errorf("`%s` ran past the caller's deadline", preview)
+		}
+		return fmt.Errorf("`%s` timed out after %s", preview, timeout)
 	}
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("`%s` was cancelled", preview)
