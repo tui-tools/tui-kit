@@ -97,6 +97,7 @@ func TestArgv(t *testing.T) {
 		name       string
 		argv       []string
 		privileged bool
+		env        []string
 		wantBin    string
 		wantArgs   []string
 	}{
@@ -116,10 +117,24 @@ func TestArgv(t *testing.T) {
 			argv: []string{"status", "verbose"}, privileged: false,
 			wantBin: "/usr/sbin/toolctl", wantArgs: []string{"status", "verbose"},
 		},
+		{
+			name: "escalated, the variables go through env after the prefix",
+			argv: []string{"toolctl", "install", "-y", "pkg"}, privileged: true,
+			env:     []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"},
+			wantBin: "/usr/bin/sudo",
+			wantArgs: []string{"-n", "env", "DEBIAN_FRONTEND=noninteractive",
+				"NEEDRESTART_MODE=a", "/usr/sbin/toolctl", "install", "-y", "pkg"},
+		},
+		{
+			name: "run directly, the variables stay out of the argv",
+			argv: []string{"toolctl", "install"}, privileged: false,
+			env:     []string{"DEBIAN_FRONTEND=noninteractive"},
+			wantBin: "/usr/sbin/toolctl", wantArgs: []string{"install"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			bin, args := r.argv(Command{Argv: tc.argv}, tc.privileged)
+			bin, args := r.argv(Command{Argv: tc.argv, Env: tc.env}, tc.privileged)
 			if bin != tc.wantBin {
 				t.Errorf("bin = %q, want %q", bin, tc.wantBin)
 			}
@@ -144,6 +159,75 @@ func TestRunCapturesOutput(t *testing.T) {
 	}
 	if out != "ran: reload" {
 		t.Errorf("output = %q", out)
+	}
+}
+
+// TestPreviewShowsTheEnvironment: a command's own variables are part of what
+// the user confirms, so the preview carries them in the form that runs: env(1)
+// after an escalation prefix, plain assignments when there is none. Both are
+// lines a shell runs the same way.
+func TestPreviewShowsTheEnvironment(t *testing.T) {
+	cmd := Command{Argv: []string{"apt-get", "install", "-y", "headscale"},
+		Env: []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a",
+			"NOTE=two words"}}
+	for _, tc := range []struct {
+		privilege []string
+		want      string
+	}{
+		{nil, "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a " +
+			"NOTE='two words' apt-get install -y headscale"},
+		{[]string{"/usr/bin/sudo", "-n"}, "/usr/bin/sudo -n env " +
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a " +
+			"NOTE='two words' apt-get install -y headscale"},
+	} {
+		r := &Runner{Name: "apt-get", Bin: "/usr/bin/apt-get", Privilege: tc.privilege}
+		if got := r.Preview(cmd); got != tc.want {
+			t.Errorf("Preview = %s\nwant      %s", got, tc.want)
+		}
+	}
+	f := &Fake{Prefix: "sudo -n"}
+	if got, want := f.Preview(cmd), "sudo -n env "+cmd.String(); got != want {
+		t.Errorf("Fake.Preview = %s, want %s", got, want)
+	}
+}
+
+// TestRunPassesTheEnvironment runs both paths for real: directly, the
+// variables are in the process environment; escalated through a sudo that
+// resets the environment the way the real one does, they still arrive,
+// because env(1) sets them after it.
+func TestRunPassesTheEnvironment(t *testing.T) {
+	dir := fakeBin(t, "toolctl", `echo "$DEBIAN_FRONTEND/$NEEDRESTART_MODE"`)
+	// A sudo that drops -n and runs the rest with an emptied environment.
+	sudoDir := fakeBin(t, "sudo", `shift; exec /usr/bin/env -i PATH=/usr/bin:/bin "$@"`)
+	t.Setenv("PATH", dir+":"+sudoDir+":/usr/bin:/bin")
+	t.Setenv("DEBIAN_FRONTEND", "")
+	cmd := Command{Argv: []string{"toolctl", "install"},
+		Env: []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"}}
+
+	direct, err := New(Options{Bin: "toolctl"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if out, err := direct.Run(context.Background(), cmd); err != nil ||
+		out != "noninteractive/a" {
+		t.Errorf("direct run = %q, %v", out, err)
+	}
+
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: no escalation to exercise")
+	}
+	escalated, err := New(Options{Bin: "toolctl", SudoPrefix: []string{"sudo", "-n"}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if out, err := escalated.Run(context.Background(), cmd); err != nil ||
+		out != "noninteractive/a" {
+		t.Errorf("escalated run = %q, %v", out, err)
+	}
+	// The same sudo without env(1) loses them, which is why it is there.
+	if out, _ := escalated.Run(context.Background(),
+		Command{Argv: []string{"toolctl"}}); out != "/" {
+		t.Errorf("the fake sudo did not reset the environment: %q", out)
 	}
 }
 

@@ -131,7 +131,8 @@ func TestOmarchyOnlyChangesPacman(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[len(got)-1].String() != "apt-get install -y tui-disk" {
+	if got[len(got)-1].String() != "DEBIAN_FRONTEND=noninteractive "+
+		"NEEDRESTART_MODE=a apt-get install -y tui-disk" {
 		t.Errorf("apt install on an omarchy id = %q", got[len(got)-1])
 	}
 	for _, build := range []func(Manager, Distro, []string) ([]Command, error){

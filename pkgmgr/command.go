@@ -27,6 +27,12 @@ type Command struct {
 	// cannot be an argument, and a shell redirection is not available to a
 	// family that builds argv values.
 	Stdin string
+	// Env holds NAME=value variables the step runs with. They are part of
+	// the command the user confirms, so the preview shows them (see
+	// runner.Command.Env), and they are passed after the escalation prefix,
+	// where sudo cannot drop them. Only privileged steps carry any: a read
+	// runs with the runner's own environment.
+	Env []string
 }
 
 // String renders the command the way the user reads it in the preview, with
@@ -40,6 +46,7 @@ func (c Command) runnerCommand() runner.Command {
 		Description: c.Explain,
 		Destructive: c.Destructive(),
 		Stdin:       c.Stdin,
+		Env:         c.Env,
 	}
 }
 
@@ -262,6 +269,31 @@ func BuildAvailable(manager Manager, names []string) (Command, error) {
 
 // -------------------------------------------------------------- mutations ---
 
+// APTEnv returns the environment every apt mutation runs with.
+//
+// Ubuntu server images ship needrestart and run it from an apt hook after
+// every transaction. Started from a TUI, apt inherits a TERM and no
+// DEBIAN_FRONTEND, so debconf picks an interactive frontend nobody can answer
+// (stdin is not a terminal, and the TUI owns the screen) and the install
+// hangs after the package is already in place. That happened for real: an
+// `apt-get install -y headscale` sat for over a minute until needrestart was
+// killed by hand (tui-kit#32).
+//
+//   - DEBIAN_FRONTEND=noninteractive makes debconf take the defaults instead
+//     of asking, for needrestart and for any package's own questions.
+//   - NEEDRESTART_MODE=a makes needrestart restart the services that still run
+//     the libraries the transaction replaced, which is what Ubuntu server does
+//     unattended. `l` (list only) would stop the hang too, but it would leave
+//     those services on the old code with a notice printed into output nobody
+//     reads while the TUI is on screen; needrestart's own exclusion list keeps
+//     it away from the session, the display manager and the like either way.
+//
+// The variables reach apt through `env` after the escalation prefix, because
+// sudo resets the caller's environment, and they are shown in the preview.
+func APTEnv() []string {
+	return []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"}
+}
+
 // BuildRefresh is the metadata refresh. It is a privileged write to the
 // manager's cache, which is why it is a step of the previewed sequence rather
 // than something a read path does behind the user's back.
@@ -270,6 +302,7 @@ func BuildRefresh(manager Manager) (Command, error) {
 	case ManagerAPT:
 		return Command{
 			Argv:       []string{"apt-get", "update"},
+			Env:        APTEnv(),
 			Privileged: true,
 			Explain:    "Refresh the apt package lists",
 		}, nil
@@ -310,6 +343,7 @@ func BuildInstall(manager Manager, names []string) ([]Command, error) {
 	case ManagerAPT:
 		return []Command{refresh, {
 			Argv:       append([]string{"apt-get", "install", "-y"}, names...),
+			Env:        APTEnv(),
 			Privileged: true,
 			Explain:    "Install " + strings.Join(names, ", "),
 		}}, nil
@@ -420,6 +454,7 @@ func BuildRemove(manager Manager, names []string) ([]Command, error) {
 	case ManagerAPT:
 		return []Command{{
 			Argv:       append([]string{"apt-get", "remove", "-y"}, names...),
+			Env:        APTEnv(),
 			Privileged: true,
 			Explain:    "Remove " + strings.Join(names, ", "),
 		}}, nil
@@ -461,6 +496,7 @@ func BuildUpgrade(manager Manager, names []string) ([]Command, error) {
 			Argv: append([]string{
 				"apt-get", "install", "--only-upgrade", "-y",
 			}, names...),
+			Env:        APTEnv(),
 			Privileged: true,
 			Explain:    "Upgrade " + strings.Join(names, ", "),
 		}}, nil

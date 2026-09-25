@@ -22,8 +22,8 @@ func TestArgvTable(t *testing.T) {
 		want    []string
 	}{
 		{"install", ManagerAPT, BuildInstall, []string{
-			"apt-get update",
-			"apt-get install -y tui-firewall tui-disk",
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update",
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y tui-firewall tui-disk",
 		}},
 		{"install", ManagerDNF, BuildInstall, []string{
 			"dnf install -y tui-firewall tui-disk",
@@ -32,7 +32,7 @@ func TestArgvTable(t *testing.T) {
 			"pacman -Syu --needed --noconfirm tui-firewall tui-disk",
 		}},
 		{"remove", ManagerAPT, BuildRemove, []string{
-			"apt-get remove -y tui-firewall tui-disk",
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get remove -y tui-firewall tui-disk",
 		}},
 		{"remove", ManagerDNF, BuildRemove, []string{
 			"dnf remove -y tui-firewall tui-disk",
@@ -41,8 +41,8 @@ func TestArgvTable(t *testing.T) {
 			"pacman -R --noconfirm tui-firewall tui-disk",
 		}},
 		{"upgrade", ManagerAPT, BuildUpgrade, []string{
-			"apt-get update",
-			"apt-get install --only-upgrade -y tui-firewall tui-disk",
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update",
+			"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install --only-upgrade -y tui-firewall tui-disk",
 		}},
 		{"upgrade", ManagerDNF, BuildUpgrade, []string{
 			"dnf upgrade -y tui-firewall tui-disk",
@@ -73,6 +73,71 @@ func TestArgvTable(t *testing.T) {
 			if got[i].Explain == "" {
 				t.Errorf("%s on %s step %d has no explanation",
 					tc.what, tc.manager, i)
+			}
+		}
+	}
+}
+
+// TestAPTMutationsRunNoninteractive pins the environment every apt mutation
+// runs with, and how it reaches apt: through env(1) after the escalation
+// prefix, where sudo cannot reset it, and in the preview, so the confirmed line
+// is the line that runs (#32).
+func TestAPTMutationsRunNoninteractive(t *testing.T) {
+	names := []string{"tui-firewall"}
+	var steps []Command
+	for _, build := range []func(Manager, []string) ([]Command, error){
+		BuildInstall, BuildUpgrade, BuildRemove,
+	} {
+		got, err := build(ManagerAPT, names)
+		if err != nil {
+			t.Fatal(err)
+		}
+		steps = append(steps, got...)
+	}
+	setup, err := BuildRepoSetup(ManagerAPT, RepoConfig{},
+		"0123456789ABCDEF0123456789ABCDEF01234567")
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps = append(steps, setup.Steps...)
+
+	want := []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"}
+	apt := 0
+	for _, step := range steps {
+		if step.Argv[0] != "apt-get" {
+			if len(step.Env) != 0 {
+				t.Errorf("%q is not apt and carries %q", step.Argv, step.Env)
+			}
+			continue
+		}
+		apt++
+		if strings.Join(step.Env, " ") != strings.Join(want, " ") {
+			t.Errorf("%q runs with %q, want %q", step.Argv, step.Env, want)
+		}
+		rc := step.runnerCommand()
+		if strings.Join(rc.Env, " ") != strings.Join(want, " ") {
+			t.Errorf("%q loses its env on the way to the runner: %q",
+				step.Argv, rc.Env)
+		}
+	}
+	if apt != 6 {
+		t.Errorf("found %d apt-get steps, want 6 (install 2, upgrade 2, "+
+			"remove 1, repository setup 1)", apt)
+	}
+
+	// The demo shows the line the real runner builds.
+	fake := &Fake{Prefix: "sudo -n"}
+	if got := fake.Preview(steps[1]); got != "sudo -n env "+
+		"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a "+
+		"apt-get install -y tui-firewall" {
+		t.Errorf("Fake.Preview = %q", got)
+	}
+	// Other managers are left as they were.
+	for _, manager := range []Manager{ManagerDNF, ManagerPacman} {
+		got, _ := BuildInstall(manager, names)
+		for _, step := range got {
+			if len(step.Env) != 0 {
+				t.Errorf("%s step %q carries %q", manager, step.Argv, step.Env)
 			}
 		}
 	}
