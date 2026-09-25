@@ -113,6 +113,15 @@ when the caller cancels its context, and then it gets SIGTERM and
 `ui.RunningMessage` in its status line, redrawn by `ui.RunningTick`, so a
 five-minute install does not look like a frozen screen.
 
+No child gets a terminal. Every process the runner starts, read or mutation,
+escalated or not, leads a new session (`setsid`) and has no controlling
+terminal. Its stdio being `/dev/null` and pipes is not enough on its own: with
+sudo's `Defaults use_pty` (Ubuntu, sudo-rs) the command gets a fresh pty, and
+debconf, a password prompt, an editor or a pager would open it and wait,
+invisible behind the TUI. Without a controlling terminal that open fails at
+once and the step fails with an error. A step that really needs the terminal is
+a hand-off through `tea.Exec`, not a runner step.
+
 The dialog is held to the same standard as the runner. `ui.Confirm` wraps its
 body and its command preview to the dialog's inner width instead of clipping
 them — a command whose tail is invisible is a command nobody can check — and
