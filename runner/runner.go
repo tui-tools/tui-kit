@@ -371,8 +371,10 @@ func (r *Runner) wrapErr(cmd Command, output string, err error,
 		return fmt.Errorf(
 			"sudo needs a password: run `sudo -v` in another terminal, then retry")
 	}
-	if output != "" {
-		return fmt.Errorf("`%s` failed: %s", preview, FirstLine(output))
+	// The output may be a terminal program's screen rather than text;
+	// StatusLine keeps the one readable line that says why it failed.
+	if line := StatusLine(output); line != "" {
+		return fmt.Errorf("`%s` failed: %s", preview, line)
 	}
 	return fmt.Errorf("`%s` failed: %w", preview, err)
 }

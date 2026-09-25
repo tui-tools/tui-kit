@@ -168,7 +168,7 @@ func ProbeWith(ctx context.Context, b Backend, exec ExecFunc) Result {
 
 	out, err := exec(ctx, b.VersionCommand)
 	if err != nil && strings.TrimSpace(out) == "" {
-		result.Detail = runner.FirstLine(err.Error())
+		result.Detail = runner.StatusLine(err.Error())
 		return result
 	}
 	// Some tools print their version and exit non-zero (a usage banner on an
