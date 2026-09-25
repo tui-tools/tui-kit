@@ -87,6 +87,12 @@ type FilePickerOptions struct {
 	// directory does: an export target, a key to generate. The zero value
 	// requires the path to exist.
 	NewFile bool
+	// InitialPath opens the picker with the path field focused and holding
+	// this text, as typed: a suggested destination such as "~/ca.crt" that
+	// the user only confirms with enter or edits first. esc goes back to the
+	// listing as usual. When Start is empty, the listing opens where the
+	// path points (its directory, or its nearest existing parent).
+	InitialPath string
 	// Home expands a typed "~". Empty means the user's home directory on the
 	// real filesystem, and no expansion on an injected one.
 	Home string
@@ -184,7 +190,11 @@ func NewFilePicker(opts FilePickerOptions) FilePicker {
 	ti.CharLimit = 4096
 	p.path = ti
 
+	initial := strings.TrimSpace(opts.InitialPath)
 	start := strings.TrimSpace(opts.Start)
+	if start == "" {
+		start = initial
+	}
 	if start == "" && onDisk {
 		start, _ = os.Getwd()
 	}
@@ -194,6 +204,11 @@ func NewFilePicker(opts FilePickerOptions) FilePicker {
 	start = p.resolve(start, onDisk)
 	dir, focus := p.startDir(start)
 	p.navigate(dir, focus)
+	if initial != "" {
+		// The blink command Focus returns is dropped: the field is focused
+		// and shows its cursor without it, as NewInput's does.
+		_ = p.startTyping(initial)
+	}
 	return p
 }
 

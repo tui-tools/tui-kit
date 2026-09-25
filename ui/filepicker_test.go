@@ -321,6 +321,70 @@ func TestFilePickerTypedPath(t *testing.T) {
 	}
 }
 
+// TestFilePickerInitialPath: a suggested path opens in the focused field, as
+// typed, so the user confirms it with enter or edits it (tui-kit#37).
+func TestFilePickerInitialPath(t *testing.T) {
+	tm := testTheme(t)
+	opts := FilePickerOptions{InitialPath: "~/ca.crt", Home: "/home/admin",
+		NewFile: true}
+
+	// Confirmed as suggested: "~" expands, the new file is accepted.
+	p := newTestPicker(opts)
+	if !p.Typing() || p.path.Value() != "~/ca.crt" || !p.path.Focused() {
+		t.Fatalf("opened: Typing=%v field=%q focused=%v",
+			p.Typing(), p.path.Value(), p.path.Focused())
+	}
+	if p.Dir != "/home/admin" {
+		t.Errorf("without Start the listing opens where the path points: Dir=%q", p.Dir)
+	}
+	if out := p.View(tm, 80, 24); !strings.Contains(out, "~/ca.crt") {
+		t.Errorf("the view must show the suggested path:\n%s", out)
+	}
+	press(&p, "enter")
+	if !p.Done || !p.Accepted || p.Value() != "/home/admin/ca.crt" {
+		t.Errorf("confirmed: Done=%v Accepted=%v Value=%q", p.Done, p.Accepted, p.Value())
+	}
+
+	// Edited before confirming: the cursor sits at the end of the text.
+	p = newTestPicker(opts)
+	press(&p, "backspace", "backspace", "backspace")
+	typeText(&p, "pem")
+	press(&p, "enter")
+	if p.Value() != "/home/admin/ca.pem" {
+		t.Errorf("edited: Value=%q", p.Value())
+	}
+
+	// esc goes back to the listing, not out of the dialog.
+	p = newTestPicker(opts)
+	press(&p, "esc")
+	if p.Done || p.Typing() {
+		t.Errorf("esc: Done=%v Typing=%v", p.Done, p.Typing())
+	}
+
+	// Start still decides the listing; the field keeps the suggestion.
+	p = newTestPicker(FilePickerOptions{Start: "/etc/ssl/certs/ca.pem",
+		InitialPath: "/srv/share/ca.pem", NewFile: true})
+	if p.Dir != "/etc/ssl/certs" || p.Highlighted() != "/etc/ssl/certs/ca.pem" {
+		t.Errorf("with Start: Dir=%q Highlighted=%q", p.Dir, p.Highlighted())
+	}
+	if !p.Typing() || p.path.Value() != "/srv/share/ca.pem" {
+		t.Errorf("with Start: Typing=%v field=%q", p.Typing(), p.path.Value())
+	}
+
+	// The options still rule: a suggestion in a missing directory is
+	// refused inline and stays in the field to fix.
+	p = newTestPicker(FilePickerOptions{InitialPath: "/nope/ca.crt", NewFile: true})
+	press(&p, "enter")
+	if p.Done || !p.Typing() || p.Message() == "" {
+		t.Errorf("refused: Done=%v Typing=%v Message=%q", p.Done, p.Typing(), p.Message())
+	}
+
+	// Without InitialPath nothing changes: the listing has the focus.
+	if p := newTestPicker(FilePickerOptions{Start: "/etc/ssl"}); p.Typing() {
+		t.Error("a picker without InitialPath must open on the listing")
+	}
+}
+
 func TestFilePickerTypedPathIsChecked(t *testing.T) {
 	tests := []struct {
 		name  string

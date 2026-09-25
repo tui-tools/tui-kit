@@ -167,6 +167,7 @@ a.picker.View(theme, width, height)
 | `ShowHidden` | Lists dot files from the start. |
 | `DirsOnly` | Picks a directory. The list starts with a `./` row that chooses the directory being listed. |
 | `NewFile` | Accepts a typed path that does not exist yet, as long as its directory does. The zero value requires the path to exist. |
+| `InitialPath` | Opens with the path field focused and holding this text as given, e.g. `~/ca.crt` for an export: `enter` confirms it, or it is edited first; `esc` goes back to the list. With no `Start`, the list opens where it points. |
 | `Home` | What a typed `~` expands to. Defaults to the user's home on the real filesystem. |
 | `FS` | The filesystem to read, see below. Nil is the real one. |
 
