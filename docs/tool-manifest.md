@@ -49,6 +49,8 @@ tool and it never drifts.
 | `since` | yes | `YYYY-MM-DD`, when the tool was first published. |
 | `keywords` | no | Extra search terms. The repository topics are a good source. |
 | `unreleased` | no | `true` for a tool that deliberately has no tag, such as the template. |
+| `stability` | no | `beta` or `stable`. Omitted means `beta`. See below. |
+| `stableSince` | with `stable` | The first stable release, `1.0.0` or later, no leading `v`. |
 
 `description` is a safe subset of markdown: paragraphs, `code`, `**bold**`,
 `_italic_` and `[links](url)`. No headings, no images, no HTML — the site
@@ -157,6 +159,25 @@ of the two they are in.
 The whole loop — where the evidence comes from, how `tested` is regenerated and
 how the README section is rendered — is
 [`docs/compatibility.md`](compatibility.md).
+
+### `stability`
+
+Where the tool stands against the family's bar, written down once in
+[`docs/stability.md`](stability.md). Every tool is beta until a pull request
+promotes it with the evidence for each point of that bar:
+
+```json
+"stability": "stable",
+"stableSince": "1.0.0"
+```
+
+The schema refuses `stable` without `stableSince`, a `stableSince` below
+`1.0.0` (a 0.x release is beta by definition) and a `stableSince` on a beta
+manifest. `tools/render-install.py` renders the README banner from these two
+fields, between `<!-- stability:start -->` and `<!-- stability:end -->`, and
+fails when the latest tag is older than `stableSince`: a tool is stable since a
+release that exists. The markers are optional while a tool is beta and
+required once it is stable.
 
 ### `security`
 

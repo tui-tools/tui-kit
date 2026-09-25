@@ -41,7 +41,17 @@ type Manifest struct {
 	// Backends is the compatibility block, optional: a tool that drives no
 	// external binary declares none.
 	Backends []compat.Backend `json:"backends,omitempty"`
+	// Stability is "beta" or "stable"; empty means beta. The bar a tool meets
+	// before it says stable is docs/stability.md.
+	Stability string `json:"stability,omitempty"`
+	// StableSince is the first stable release, without the leading v. Set
+	// only when Stability is "stable".
+	StableSince string `json:"stableSince,omitempty"`
 }
+
+// Stable reports whether the manifest declares the tool stable. A manifest
+// that omits the field is beta, which is every tool until it is promoted.
+func (m Manifest) Stable() bool { return m.Stability == "stable" }
 
 // Load parses an embedded manifest.
 func Load(data []byte) (Manifest, error) {
