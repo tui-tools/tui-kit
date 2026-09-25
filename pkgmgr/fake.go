@@ -95,6 +95,10 @@ func (f *Fake) Preview(cmd Command) string {
 	if !cmd.Privileged || f.Prefix == "" {
 		return cmd.String()
 	}
+	if len(cmd.Env) > 0 {
+		// The real runner passes a step's variables through env(1).
+		return f.Prefix + " env " + cmd.String()
+	}
 	return f.Prefix + " " + cmd.String()
 }
 

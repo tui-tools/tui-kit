@@ -69,10 +69,41 @@ type Command struct {
 	// rendered anywhere. A tool that wants to say something about the input
 	// says it in the dialog's own body.
 	Stdin string
+	// Env holds NAME=value variables set for this command alone, on top of the
+	// runner's own (Options.Env). Unlike those, they are part of what the
+	// user confirms, so they appear in the preview: as assignments before the
+	// command when it runs directly, and through `env` after the escalation
+	// prefix when it is escalated, because sudo resets the caller's
+	// environment and would silently drop them.
+	Env []string
 }
 
-// String renders the command the way the user reads it in the preview.
-func (c Command) String() string { return strings.Join(c.Argv, " ") }
+// String renders the command the way the user reads it in the preview: its
+// variables as shell assignments, then each argument shell-quoted when it
+// needs it (see Join), so the line pasted into a shell runs the same argv in
+// the same environment.
+func (c Command) String() string {
+	if len(c.Env) == 0 {
+		return Join(c.Argv)
+	}
+	return joinEnv(c.Env) + " " + Join(c.Argv)
+}
+
+// joinEnv renders NAME=value variables as shell assignments, quoting only the
+// value, so they read as assignments before a command and as arguments to
+// `env` after an escalation prefix.
+func joinEnv(env []string) string {
+	out := make([]string, len(env))
+	for i, kv := range env {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			out[i] = Quote(kv)
+			continue
+		}
+		out[i] = name + "=" + Quote(value)
+	}
+	return strings.Join(out, " ")
+}
 
 // Interface is the part of a Runner a UI needs. Tools depend on it so a fake
 // can stand in for the real host in tests and in --demo mode.
@@ -220,11 +251,18 @@ func (r *Runner) Preview(cmd Command) string {
 	if !r.Privileged() {
 		return cmd.String()
 	}
-	return strings.Join(r.Privilege, " ") + " " + cmd.String()
+	if len(cmd.Env) > 0 {
+		// The variables are set by env(1) after escalation; see Command.Env.
+		return Join(r.Privilege) + " env " + cmd.String()
+	}
+	return Join(r.Privilege) + " " + cmd.String()
 }
 
 // argv builds the invocation: the resolved binary, the command's own
-// arguments, and the privilege prefix when the call needs it.
+// arguments, and the privilege prefix when the call needs it. A command with
+// variables of its own goes through `env` after the prefix, so escalation
+// cannot drop them; run directly, it gets them in its environment instead
+// (see exec).
 func (r *Runner) argv(cmd Command, privileged bool) (bin string, args []string) {
 	rest := cmd.Argv
 	// Argv[0] names the tool; the resolved path replaces it.
@@ -234,8 +272,11 @@ func (r *Runner) argv(cmd Command, privileged bool) (bin string, args []string) 
 	if !privileged || !r.Privileged() {
 		return r.Bin, rest
 	}
-	prefix := append([]string{}, r.Privilege[1:]...)
-	return r.Privilege[0], append(prefix, append([]string{r.Bin}, rest...)...)
+	args = append([]string{}, r.Privilege[1:]...)
+	if len(cmd.Env) > 0 {
+		args = append(append(args, "env"), cmd.Env...)
+	}
+	return r.Privilege[0], append(append(args, r.Bin), rest...)
 }
 
 // Run executes a previewed command with escalation. It is a mutation: no
@@ -274,6 +315,10 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
 		c.WaitDelay = MutationGrace
 	}
 	c.Env = append(os.Environ(), r.env...)
+	if !privileged || !r.Privileged() {
+		// Escalated, the variables travel through env(1) in the argv.
+		c.Env = append(c.Env, cmd.Env...)
+	}
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
 	}

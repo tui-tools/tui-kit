@@ -93,6 +93,11 @@ out, err := r.Run(ctx, cmd)
 Because `Preview` and `Run` consume the same value, the text in the dialog is
 guaranteed to be what executes. That is the whole trust boundary.
 
+The preview is also a line a person can paste. Each argument is shell-quoted
+with POSIX single quotes when it needs it (`runner.Join`, the rule of Python's
+`shlex.join`), so `ufw allow 19443/tcp comment 'headscale control (tailnet)'`
+reads, and runs in a shell, as the same argv the runner executes.
+
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
 
@@ -210,11 +215,20 @@ The contract, in short:
   `^tui-[a-z]+$` first. There is no builder that skips the check and no way to
   pass a name through it, so no command in this package can be assembled from
   input nobody looked at.
-- **Commands are values.** `Command{Argv, Privileged, Explain, Stdin}` is
+- **Commands are values.** `Command{Argv, Privileged, Explain, Stdin, Env}` is
   previewed and then handed back to be run, exactly as `runner` does — the
   command line in the dialog is the command line that runs. A read is never
   marked privileged: listing what is installed must not raise a password
   prompt.
+- **apt never prompts.** Every apt mutation (install, upgrade, remove, the
+  refresh of the repository setup) carries `Env: pkgmgr.APTEnv()`,
+  `DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a`, so Ubuntu's needrestart
+  hook cannot sit on a debconf prompt nobody can answer while the TUI owns the
+  terminal. `a` restarts the services left on replaced libraries, as Ubuntu
+  server does unattended; `l` would only list them into output nobody reads.
+  sudo resets the environment, so the runner passes the variables through
+  `env` after the prefix, and the preview shows it:
+  `sudo -n env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y tui-disk`.
 - **Arch and Omarchy.** On Arch an install or upgrade is `pacman -Syu` with the
   names, because a partial upgrade is not supported there. Omarchy refuses that:
   its pacman hook aborts any direct `-Syu` that does not come from

@@ -17,12 +17,16 @@ line they cannot check.
 So the dialogs wrap, they never truncate:
 
 - **Prose** — `Confirm.Body`, `Input.Help` — is word-wrapped to the dialog's
-  inner width. Blank lines are kept, because they are the paragraph breaks the
-  body author wrote.
+  inner width, runs of spaces folded into one. Blank lines are kept, because
+  they are the paragraph breaks the body author wrote.
 - **Pre-formatted lines** are wrapped too, with their continuations indented
-  under the first line so the eye still reads them as one thing. Two shapes are
-  recognised: a line starting with `$ ` (the command preview) and a line
-  starting with two spaces (an indented block).
+  under the first line so the eye still reads them as one thing, and their
+  spacing is kept exactly as written: a line only breaks at a run of spaces,
+  never inside one. Three shapes are recognised: a line starting with `$ ` (the
+  command preview), a line starting with two spaces (an indented block) and a
+  unified-diff line (`+ `, `- `, `@@`, `+++ `, `--- `). In a diff of a YAML
+  file the spaces after the marker are the file's indentation, which is its
+  meaning, so the change the user approves reads as the file that is written.
 
 ```
 │  Command to run:                                     │
@@ -44,7 +48,7 @@ The helpers are exported, for the tools that lay out their own panels:
 
 ```go
 lines := ui.Wrap("a paragraph", 40)      // word wrap, hard-splitting long words
-lines := ui.WrapBody(body, 40)           // multi-line, keeps "$ " and indented blocks
+lines := ui.WrapBody(body, 40)           // multi-line, keeps "$ ", indented and diff lines
 ```
 
 ## Scrolling a tall dialog

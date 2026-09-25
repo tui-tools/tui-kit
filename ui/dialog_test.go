@@ -134,6 +134,114 @@ func TestWrapBodyWrapsCommandsRatherThanClippingThem(t *testing.T) {
 	}
 }
 
+// yamlDiff is the shape of the configuration change tui-tailscale previews
+// before it writes /etc/headscale/config.yaml: a diff whose indentation after
+// the marker is the YAML's own, and therefore its meaning (#30). It comes in
+// both forms a dialog body carries: flush with the marker, and set off as an
+// indented block.
+var yamlDiff = []string{
+	"@@ -40,6 +40,14 @@",
+	"  dns:",
+	"-   base_domain: example.com",
+	"+   base_domain: tailnet.example.com",
+	"+ oidc:",
+	`+   issuer: "https://sso.lab.internal:18443/realms/company"`,
+	`+   client_id: "headscale"`,
+	"+   scope: [\"openid\", \"profile\", \"email\", \"groups\", \"offline_access\"]",
+	"+   pkce:",
+	"+     enabled: true",
+	"+     method: S256",
+}
+
+func TestWrapBodyKeepsTheIndentationOfADiff(t *testing.T) {
+	forms := map[string][]string{
+		"flush":    yamlDiff,
+		"indented": indentAll(yamlDiff, "  "),
+	}
+	for name, diff := range forms {
+		body := "Write this change to /etc/headscale/config.yaml?\n\n" +
+			strings.Join(diff, "\n")
+		t.Run(name+"/120 columns", func(t *testing.T) {
+			// Wide enough for every line: each diff line comes back exactly
+			// as it was written, spaces and all.
+			lines := WrapBody(body, 120)
+			got := lines[len(lines)-len(diff):]
+			for i := range diff {
+				if got[i] != diff[i] {
+					t.Errorf("line %d = %q, want %q", i, got[i], diff[i])
+				}
+			}
+		})
+		t.Run(name+"/60 columns", func(t *testing.T) {
+			lines := WrapBody(body, 60)
+			for i, line := range lines {
+				if w := lipgloss.Width(line); w > 60 {
+					t.Errorf("line %d is %d cells: %q", i, w, line)
+				}
+			}
+			// Every diff line that fits is untouched, and every one that
+			// does not still opens with its marker and its indentation.
+			for _, want := range diff {
+				if lipgloss.Width(want) <= 60 {
+					if !contains(lines, want) {
+						t.Errorf("%q lost its spacing: %q", want, lines)
+					}
+					continue
+				}
+				// The marker, the YAML indentation and the key.
+				opening := want[:strings.Index(want, ":")+1]
+				if !hasPrefixLine(lines, opening) {
+					t.Errorf("the wrapped line does not open with %q: %q",
+						opening, lines)
+				}
+			}
+		})
+	}
+}
+
+// TestWrapBodyStillFoldsProse pins the other half of the rule: a paragraph a
+// dialog author wrote is reflowed, extra spaces and all.
+func TestWrapBodyStillFoldsProse(t *testing.T) {
+	got := WrapBody("Replace   the  rule?", 60)
+	if len(got) != 1 || got[0] != "Replace the rule?" {
+		t.Errorf("WrapBody = %q, want the prose folded", got)
+	}
+}
+
+func TestWrapBodyKeepsTheSpacingInsideACommand(t *testing.T) {
+	command := "$ /usr/bin/sudo -n sh -c 'printf \"%s  %s\\n\" a b'"
+	got := WrapBody(command, 120)
+	if len(got) != 1 || got[0] != command {
+		t.Errorf("WrapBody = %q, want %q", got, command)
+	}
+}
+
+func indentAll(lines []string, indent string) []string {
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = indent + line
+	}
+	return out
+}
+
+func contains(lines []string, want string) bool {
+	for _, line := range lines {
+		if line == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPrefixLine(lines []string, prefix string) bool {
+	for _, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestConfirmViewWrapsInsteadOfTruncating(t *testing.T) {
 	tm := testTheme(t)
 	c := Confirm{

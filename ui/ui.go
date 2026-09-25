@@ -178,12 +178,14 @@ func Wrap(s string, width int) []string {
 // preIndentFor reports the continuation indent a pre-formatted line wants, and
 // whether the line is pre-formatted at all.
 //
-// Two shapes are recognised, and they are the two the family's dialogs
-// produce: a command preview starting with "$ ", and an indented block
-// starting with two spaces. Both are wrapped rather than clipped — the command
-// preview is the trust boundary of the whole family, and a command line the
-// user cannot read to its end is a command line they cannot check — but their
-// continuations are indented so the eye still sees one logical line.
+// Three shapes are recognised, and they are the ones the family's dialogs
+// produce: a command preview starting with "$ ", an indented block starting
+// with two spaces, and a unified-diff line ("+ ", "- ", "@@", "+++ ", "--- ")
+// such as a configuration change previewed before it is written. All of them
+// are wrapped rather than clipped — the command preview is the trust boundary
+// of the whole family, and a command line the user cannot read to its end is a
+// command line they cannot check — but their continuations are indented so the
+// eye still sees one logical line, and their inner spacing is kept as written.
 func preIndentFor(line string) (indent string, pre bool) {
 	if strings.HasPrefix(line, "$ ") {
 		return "  ", true
@@ -191,7 +193,28 @@ func preIndentFor(line string) (indent string, pre bool) {
 	if lead := leadingSpace(line); lead != "" && strings.HasPrefix(line, "  ") {
 		return lead + "  ", true
 	}
+	if isDiffLine(line) {
+		return "  ", true
+	}
 	return "", false
+}
+
+// isDiffLine reports whether a line reads as a unified-diff line: an added or
+// removed line ("+ ", "- ", or the marker alone), a hunk header ("@@") or a file
+// header ("+++ ", "--- "). In a diff of a YAML file the spaces after the marker
+// are the file's own indentation, which is its meaning.
+func isDiffLine(line string) bool {
+	switch {
+	case strings.HasPrefix(line, "@@"),
+		strings.HasPrefix(line, "+++ "), strings.HasPrefix(line, "--- "):
+		return true
+	case line == "+", line == "-":
+		return true
+	case strings.HasPrefix(line, "+ "), strings.HasPrefix(line, "- "),
+		strings.HasPrefix(line, "+\t"), strings.HasPrefix(line, "-\t"):
+		return true
+	}
+	return false
 }
 
 // leadingSpace returns the run of spaces and tabs that opens s.
@@ -201,11 +224,13 @@ func leadingSpace(s string) string {
 
 // WrapBody wraps a multi-line dialog body to width cells.
 //
-// Prose lines are word-wrapped. Pre-formatted lines — a "$ " command preview or
-// a two-space indented block — are wrapped too, with their continuations
-// indented under the first line, so nothing in a dialog is ever silently cut.
-// Empty lines are kept, because they are the paragraph breaks the body author
-// wrote. A width of zero or less returns nothing.
+// Prose lines are word-wrapped, their runs of spaces folded into one.
+// Pre-formatted lines — a "$ " command preview, a two-space indented block or a
+// diff line — are wrapped too, with their continuations indented under the
+// first line, so nothing in a dialog is ever silently cut; their spacing is
+// kept exactly as written, because in a diff of a YAML file the indentation is
+// the content. Empty lines are kept, because they are the paragraph breaks the
+// body author wrote. A width of zero or less returns nothing.
 func WrapBody(s string, width int) []string {
 	if width <= 0 {
 		return nil
@@ -217,7 +242,11 @@ func WrapBody(s string, width int) []string {
 			out = append(out, "")
 			continue
 		}
-		indent, _ := preIndentFor(line)
+		indent, pre := preIndentFor(line)
+		if pre {
+			out = append(out, wrapPreformatted(line, indent, width)...)
+			continue
+		}
 		out = append(out, wrapIndented(line, indent, width)...)
 	}
 	return out
@@ -226,14 +255,58 @@ func WrapBody(s string, width int) []string {
 // wrapIndented wraps the words of line into lines of at most width cells,
 // prefixing every line after the first with indent. The leading whitespace of
 // line opens the first output line, so an indented block keeps its shape.
+// Inside the line, words are separated by single spaces: this is the prose
+// wrap.
 func wrapIndented(line, indent string, width int) []string {
+	lead := leadingSpace(line)
+	var pieces []piece
+	for _, word := range strings.Fields(line) {
+		pieces = append(pieces, piece{sep: " ", word: word})
+	}
+	return wrapPieces(pieces, lead, indent, width)
+}
+
+// wrapPreformatted wraps a pre-formatted line without touching its spacing:
+// every run of spaces between two words is kept as it was, and a line is only
+// broken at such a run, which is dropped at the break the way a word wrap drops
+// the space it breaks on.
+func wrapPreformatted(line, indent string, width int) []string {
+	lead := leadingSpace(line)
+	return wrapPieces(splitPieces(line[len(lead):]), lead, indent, width)
+}
+
+// piece is one word of a line and the whitespace written before it.
+type piece struct {
+	sep, word string
+}
+
+// splitPieces cuts s, which starts with a word, into its words, each with the
+// run of whitespace that precedes it in s.
+func splitPieces(s string) []piece {
+	var pieces []piece
+	for s != "" {
+		rest := strings.TrimLeft(s, " \t")
+		sep := s[:len(s)-len(rest)]
+		end := strings.IndexAny(rest, " \t")
+		if end < 0 {
+			end = len(rest)
+		}
+		pieces = append(pieces, piece{sep: sep, word: rest[:end]})
+		s = rest[end:]
+	}
+	return pieces
+}
+
+// wrapPieces lays pieces out into lines of at most width cells. The first line
+// opens with lead, every later one with indent; a piece that starts a line
+// drops its separator, and a word wider than the line is hard-split.
+func wrapPieces(pieces []piece, lead, indent string, width int) []string {
 	if width <= 0 {
 		return []string{""}
 	}
 	if lipgloss.Width(indent) >= width {
 		indent = ""
 	}
-	lead := leadingSpace(line)
 	if lipgloss.Width(lead) >= width {
 		lead = ""
 	}
@@ -258,7 +331,8 @@ func wrapIndented(line, indent string, width int) []string {
 		current = ""
 	}
 
-	for _, word := range strings.Fields(line) {
+	for _, p := range pieces {
+		word := p.word
 		for lipgloss.Width(word) > budget() {
 			if current != "" {
 				flush()
@@ -275,8 +349,8 @@ func wrapIndented(line, indent string, width int) []string {
 		switch {
 		case current == "":
 			current = word
-		case lipgloss.Width(current)+1+lipgloss.Width(word) <= budget():
-			current += " " + word
+		case lipgloss.Width(current)+lipgloss.Width(p.sep)+lipgloss.Width(word) <= budget():
+			current += p.sep + word
 		default:
 			flush()
 			current = word
