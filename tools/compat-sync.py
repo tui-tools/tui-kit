@@ -14,6 +14,12 @@ This script folds that file into `backends[].tested` in tool.json: only the
 `pass` lines count, versions are de-duplicated and sorted oldest first, and a
 backend with no passing run gets an empty list rather than a stale one.
 
+The evidence stays raw and the manifest canonical: each recorded version is
+read through the backend's `versionRegex` (the pattern the binary's probe
+uses) before it goes into `tested`, so `4.19.5-Ubuntu` becomes `4.19.5` when
+the probe on that host reports `4.19.5`. A version that cannot be used is
+reported on stderr, naming its line, never dropped without a word.
+
     tui-kit/tools/compat-sync.py --manifest tool.json --results compat/results.jsonl
 
 `--from-log` harvests the evidence out of a lab log first. The smoke test
@@ -43,6 +49,87 @@ LOG_PREFIX = "compat-result:"
 REQUIRED = ("tool", "backend", "version", "distro", "date", "result", "suite")
 
 VERSION_RE = re.compile(r"^\d+(\.\d+){0,2}([-+][0-9A-Za-z.]+)?$")
+
+# The version token tui-kit/compat.ParseVersion takes when a backend has no
+# versionRegex (compat/version.go, versionRe).
+TOKEN_RE = re.compile(r"\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.]+)?")
+
+
+def first_group(pattern: str) -> str | None:
+    """The text of the first capturing group of a regular expression.
+
+    It skips escapes, character classes and non-capturing or flag groups
+    (`(?:`, `(?i)`), and returns None when the pattern captures nothing.
+    """
+    depth = 0
+    start = None
+    i = 0
+    in_class = False
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if in_class:
+            if ch == "]":
+                in_class = False
+        elif ch == "[":
+            in_class = True
+            # A ] right after [ or [^ is a literal.
+            if pattern[i + 1:i + 2] == "^":
+                i += 1
+            if pattern[i + 1:i + 2] == "]":
+                i += 1
+        elif ch == "(":
+            named = pattern.startswith(("(?P<", "(?<"), i) and not \
+                pattern.startswith(("(?<=", "(?<!"), i)
+            if start is None and (pattern[i + 1:i + 2] != "?" or named):
+                start, depth = i, 0
+                if named:
+                    i = pattern.index(">", i)
+                    start = i
+            if start is not None:
+                depth += 1
+        elif ch == ")" and start is not None:
+            depth -= 1
+            if depth == 0:
+                return pattern[start + 1:i]
+        i += 1
+    return None
+
+
+def canonical_version(version: str, pattern: str) -> str:
+    """Read a recorded version the way the tool's probe reads its backend.
+
+    The recorded string is what the backend printed as its version, and the
+    probe runs the manifest's versionRegex over the whole `--version` output
+    (tui-kit/compat.ParseVersion: the first capturing group, else the whole
+    match). The regex is tried on the recorded string first. A pattern
+    anchored on text around the version (`ufw ([0-9.]+)`) cannot match a
+    bare version, so its capturing group is then matched at the start of the
+    string on its own. When neither matches, the version is kept as recorded.
+    """
+    if not pattern:
+        match = TOKEN_RE.search(version)
+        return match.group(0).strip() if match else version
+    try:
+        compiled = re.compile(pattern)
+    except re.error:
+        # compat.ParseVersion falls back to the default token the same way.
+        return canonical_version(version, "")
+    match = compiled.search(version)
+    if match:
+        group = match.group(1) if compiled.groups and match.group(1) else None
+        return (group or match.group(0)).strip()
+    group = first_group(pattern)
+    if group is not None:
+        try:
+            match = re.match(group, version)
+        except re.error:
+            match = None
+        if match and match.group(0):
+            return match.group(0).strip()
+    return version
 
 
 def version_key(version: str) -> tuple:
@@ -146,17 +233,23 @@ def fingerprint(entry: dict) -> tuple:
     )
 
 
-def tested_versions(results: list[dict], tool: str, backend: str) -> list[str]:
-    """The passing versions recorded for one backend, sorted and de-duplicated."""
+def tested_versions(results: list[dict], tool: str, backend: str,
+                    pattern: str = "") -> list[str]:
+    """The passing versions recorded for one backend, read through its
+    versionRegex (canonical_version), sorted and de-duplicated."""
     versions = set()
     for entry in results:
         if entry["tool"] != tool or entry["backend"] != backend:
             continue
         if entry["result"] != "pass":
             continue
-        version = str(entry["version"]).strip()
+        recorded = str(entry["version"]).strip()
+        version = canonical_version(recorded, pattern)
         if not VERSION_RE.match(version):
-            print(f"skipping an unusable version {version!r}", file=sys.stderr)
+            print(f"warning: {backend}: the {entry['distro']} "
+                  f"{entry['date']} pass recorded version {recorded!r}, "
+                  f"which is not a version tested can hold; left out",
+                  file=sys.stderr)
             continue
         versions.add(version)
     return sorted(versions, key=version_key)
@@ -200,7 +293,8 @@ def main() -> int:
     results = read_results(args.results)
     changed = False
     for backend in backends:
-        versions = tested_versions(results, manifest["name"], backend["name"])
+        versions = tested_versions(results, manifest["name"], backend["name"],
+                                   backend.get("versionRegex", ""))
         current = backend.get("tested", [])
         if current == versions:
             continue

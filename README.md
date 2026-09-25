@@ -113,6 +113,15 @@ when the caller cancels its context, and then it gets SIGTERM and
 `ui.RunningMessage` in its status line, redrawn by `ui.RunningTick`, so a
 five-minute install does not look like a frozen screen.
 
+No child gets a terminal. Every process the runner starts, read or mutation,
+escalated or not, leads a new session (`setsid`) and has no controlling
+terminal. Its stdio being `/dev/null` and pipes is not enough on its own: with
+sudo's `Defaults use_pty` (Ubuntu, sudo-rs) the command gets a fresh pty, and
+debconf, a password prompt, an editor or a pager would open it and wait,
+invisible behind the TUI. Without a controlling terminal that open fails at
+once and the step fails with an error. A step that really needs the terminal is
+a hand-off through `tea.Exec`, not a runner step.
+
 The dialog is held to the same standard as the runner. `ui.Confirm` wraps its
 body and its command preview to the dialog's inner width instead of clipping
 them — a command whose tail is invisible is a command nobody can check — and
@@ -239,6 +248,19 @@ The contract, in short:
   names, against the databases the repository setup's `-Sy` or the last
   `omarchy update` synced, with an explanation that says the system itself
   upgrades through `omarchy update`, not here (`OmarchyNote`).
+- **Companions.** A package a tool drives that is not a `tui-*` tool, such as
+  `headscale` (mirrored in the family repository) or `tailscale` (from its own
+  repository), goes through the companion builders:
+  `BuildCompanionInstallOn`/`BuildCompanionUpgradeOn` take the manager, the
+  distribution and the targets and return the same plans as the tools,
+  Omarchy's `-S --needed` included; `BuildCompanionInstalled`,
+  `BuildCompanionAvailable` and `BuildCompanionRemove` mirror the rest. A name
+  is held to `CheckCompanionName` (`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, at most 64
+  characters). An install or upgrade target may name its repository,
+  `tui-tools/headscale`: pacman gets it as written, so Arch's own build of a
+  mirrored package cannot win over the family's, and apt and dnf get the bare
+  name (apt would read the qualifier as a release, and a dnf `--repo` hides the
+  distribution's repositories from dependency resolution).
 - **Repository.** `RepoStatus` reports whether `pkgs.tui.tools` is configured —
   an apt sources file naming it, a dnf `.repo`, or a `[tui-tools]` section
   reachable from `/etc/pacman.conf`, including through an `Include`.

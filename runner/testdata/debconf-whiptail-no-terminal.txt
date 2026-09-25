@@ -1,0 +1,24 @@
+[?1049h[22;0;0t[1;24r[4l(B[m[37m[40m[1;24r[H[2J[1;1H[35m[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[33m[42mPackage configuration[2;4H(0[34m[40mlqqqqqqqqqqqqqqqqqqqqqqqqqu(B[m(B[34m[40m [31mConfiguring tzdata[34m (0[34m[40mtqqqqqqqqqqqqqqqqqqqqqqqqqk[3;4Hx(B[m(B[33m[40m [36m[42mPlease select the geographic area in which you live. Subsequent       [33m[40m (0[34m[40mx(B[m(B[32m[40m [4;4H(0[34m[40mx(B[m(B[33m[40m [36m[42mconfiguration questions will narrow this down by presenting a list of [33m[40m (0[34m[40mx(B[m(B[32m[40m [5;4H(0[34m[40mx(B[m(B[33m[40m [36m[42mcities, representing the time zones in which they are located.        [33m[40m (0[34m[40mx(B[m(B[32m[40m [6;4H(0[34m[40mx(B[m(B[33m[40m [36m[42m                                                                      [33m[40m (0[34m[40mx(B[m(B[32m[40m [7;4H(0[34m[40mx(B[m(B[33m[40m [36m[42mGeographic area:                                                      [33m[40m (0[34m[40mx(B[m(B[32m[40m [8;4H(0[34m[40mx(B[m(B[33m[40m                                                                        (0[34m[40mx(B[m(B[32m[40m [9;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mAntarctica   [33m[40m  (0[30m[41m (B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [10;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mArctic       [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [11;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mAsia         [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [12;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mAtlantic     [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [13;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mAustralia    [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [14;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mEurope       [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [15;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mIndian       [33m[40m  (0[30m[41m (B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [16;4H(0[34m[40mx(B[m(B[33m[40m                             [30m[41mPacific      [33m[40m  (0[30m[41ma(B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [17;4H(0[34m[40mx(B[m(B[33m[40m                             [35m[43mEtc          [33m[40m  (0[30m[41m (B[m(B[33m[40m                           (0[34m[40mx(B[m(B[32m[40m [18;4H(0[34m[40mx(B[m(B[33m[40m                                                                        (0[34m[40mx(B[m(B[32m[40m [19;4H(0[34m[40mx(B[m(B[33m[40m                                                                        (0[34m[40mx(B[m(B[32m[40m [20;4H(0[34m[40mx(B[m(B[33m[40m                   [36m[43m<Ok>[33m[40m                       [36m[43m<Cancel>[33m[40m                  (0[34m[40mx(B[m(B[32m[40m [21;4H(0[34m[40mx(B[m(B[33m[40m                                                                        (0[34m[40mx(B[m(B[32m[40m [22;4H(0[34m[40mmqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqj(B[m(B[32m[40m [23;5H                                                                          [17;34H[?12l[?25h[24;1H[37m(B[m[39;49m[K[?1049l[23;0;0tFailed to open terminal.debconf: whiptail output the above errors, giving up!

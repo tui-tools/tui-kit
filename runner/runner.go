@@ -11,6 +11,12 @@
 // Privilege escalation is part of that contract. The Runner resolves the
 // configured prefix ("sudo -n") once at construction, so a tool that cannot
 // escalate says so at startup instead of failing halfway through a change.
+//
+// No child gets a terminal. Every process the Runner starts, read or mutation,
+// escalated or not, leads a session of its own with no controlling terminal,
+// so nothing it runs can prompt on a terminal hidden behind the TUI: a program
+// that opens /dev/tty fails at once instead of waiting forever. A step that
+// genuinely needs the terminal is a hand-off (tea.Exec), not a runner step.
 package runner
 
 import (
@@ -310,6 +316,17 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
 
 	bin, args := r.argv(cmd, privileged)
 	c := exec.CommandContext(ctx, bin, args...) //nolint:gosec // argv is built here, never from a shell string
+	// Every child, read or mutation, escalated or not, starts in a session of
+	// its own and so has no controlling terminal. Pipes and /dev/null on
+	// stdio are not enough: a child left in the TUI's session inherits its
+	// terminal, and sudo with `Defaults use_pty` (Ubuntu's sudoers, sudo-rs)
+	// even hands the command a fresh pty. debconf, whiptail, a password
+	// prompt, an editor or a pager then opens /dev/tty and waits there,
+	// invisible behind the TUI, forever. Without a controlling terminal that
+	// open fails at once (ENXIO) and the step fails with an error instead.
+	// A step that genuinely needs the terminal is not a runner step: it is a
+	// hand-off (tea.Exec), which gives the terminal away on purpose.
+	c.SysProcAttr = detachedSession()
 	if mutation {
 		c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
 		c.WaitDelay = MutationGrace
@@ -354,8 +371,10 @@ func (r *Runner) wrapErr(cmd Command, output string, err error,
 		return fmt.Errorf(
 			"sudo needs a password: run `sudo -v` in another terminal, then retry")
 	}
-	if output != "" {
-		return fmt.Errorf("`%s` failed: %s", preview, FirstLine(output))
+	// The output may be a terminal program's screen rather than text;
+	// StatusLine keeps the one readable line that says why it failed.
+	if line := StatusLine(output); line != "" {
+		return fmt.Errorf("`%s` failed: %s", preview, line)
 	}
 	return fmt.Errorf("`%s` failed: %w", preview, err)
 }

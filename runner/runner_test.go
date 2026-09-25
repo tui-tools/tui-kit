@@ -504,3 +504,73 @@ func TestFakeError(t *testing.T) {
 		t.Errorf("err = %v, want %v", err, want)
 	}
 }
+
+// ttyProbe reports whether the process has a controlling terminal and whether
+// it leads its own session. It is the probe from tui-kit#35: /dev/tty opens
+// only for a process that has a controlling terminal, and field 6 of
+// /proc/<pid>/stat is the session id, equal to the pid for a session leader.
+const ttyProbe = `if (exec 3</dev/tty) 2>/dev/null; then echo ctty=yes; else echo ctty=no; fi
+sid=$(cut -d' ' -f6 /proc/$$/stat)
+if [ "$sid" = "$$" ]; then echo session=own; else echo session=inherited; fi`
+
+// fakeSudo is an escalation prefix that drops -n and execs the command, so
+// the escalated path runs for real without root.
+func fakeSudo(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(fakeBin(t, "sudo", `[ "$1" = -n ] && shift
+exec "$@"`), "sudo")
+}
+
+// TestChildrenHaveNoControllingTerminal: every child the runner starts, read
+// or mutation, escalated or not, leads a session of its own and so cannot
+// reach the terminal the TUI is drawing on (tui-kit#35).
+func TestChildrenHaveNoControllingTerminal(t *testing.T) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		t.Skip("needs /proc")
+	}
+	dir := fakeBin(t, "probe", ttyProbe)
+	r := &Runner{Name: "probe", Bin: filepath.Join(dir, "probe"),
+		Privilege:       []string{fakeSudo(t), "-n"},
+		privilegedReads: true, Timeout: 5 * time.Second}
+	plain := &Runner{Name: "probe", Bin: filepath.Join(dir, "probe"),
+		Timeout: 5 * time.Second}
+	want := "ctty=no\nsession=own"
+	cases := map[string]func() (string, error){
+		"read":               func() (string, error) { return plain.Read(context.Background(), "probe") },
+		"mutation":           func() (string, error) { return plain.Run(context.Background(), Command{Argv: []string{"probe"}}) },
+		"escalated read":     func() (string, error) { return r.Read(context.Background(), "probe") },
+		"escalated mutation": func() (string, error) { return r.Run(context.Background(), Command{Argv: []string{"probe"}}) },
+	}
+	for name, run := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, err := run()
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			if out != want {
+				t.Errorf("probe = %q, want %q", out, want)
+			}
+		})
+	}
+}
+
+// TestChildReadingTheTerminalFailsFast: a child that asks the terminal for an
+// answer (debconf, a password prompt) gets an error at once instead of
+// waiting behind the TUI for an answer nobody can type.
+func TestChildReadingTheTerminalFailsFast(t *testing.T) {
+	dir := fakeBin(t, "asker", `printf 'Continue? ' >/dev/tty || exit 3
+read -r answer </dev/tty || exit 4
+echo "answered $answer"`)
+	r := &Runner{Name: "asker", Bin: filepath.Join(dir, "asker"),
+		Privilege: []string{fakeSudo(t), "-n"}, Timeout: 5 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := r.Run(ctx, Command{Argv: []string{"asker"}})
+	if err == nil {
+		t.Fatal("a child reading /dev/tty succeeded; it must fail without a terminal")
+	}
+	if ctx.Err() != nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("the child waited on the terminal (%s): %v", time.Since(start), err)
+	}
+}

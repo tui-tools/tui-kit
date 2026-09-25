@@ -84,6 +84,18 @@ is the one that machine really had. The smoke test also prints the line to
 stdout behind a `compat-result:` prefix, which is how it survives the trip out
 of the guest and into the lab's log.
 
+The evidence stays raw and `tested` stays canonical. A smoke test records the
+version string the backend printed, distribution suffix and all
+(`4.19.5-Ubuntu` from Ubuntu's `samba-tool --version`), because that says which
+build was exercised. `compat-sync.py` reads each one through the backend's
+`versionRegex`, the pattern the tool's own probe uses, before it goes into
+`tested`, so the list holds what the tool reports on that host (`4.19.5`) and
+the header says `tested` there. A pattern anchored on text around the version
+(`ufw ([0-9.]+)`) is applied through its capturing group; without a
+`versionRegex` the default token is taken, as the probe does. A recorded
+version that still is not one `tested` can hold is named on stderr and left
+out.
+
 ## The loop
 
 ```sh
