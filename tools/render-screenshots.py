@@ -569,8 +569,8 @@ PAGE = """<html><body style="margin:0;background:#0f0f14;padding:24px;font-famil
 <div style="display:inline-block;background:#1a1b26;color:#c0caf5;border-radius:10px;padding:16px 20px;box-shadow:0 8px 30px #0008">{bar}
 <style>
 .t{font:15px/18px 'Noto Sans Mono','JetBrains Mono','DejaVu Sans Mono',monospace}
-.r{height:18px;white-space:pre;overflow:hidden}
-c{display:inline-block;width:9px;height:18px;vertical-align:top;overflow:hidden;text-align:center}
+.r{height:18px;white-space:pre}
+c{display:inline-block;width:9px;height:18px;vertical-align:top;text-align:center}
 c.w{width:18px}
 c.b{color:transparent;background-size:100% 100%;background-repeat:no-repeat}
 </style>
