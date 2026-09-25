@@ -11,7 +11,8 @@
 //
 //	apt      Debian, Ubuntu and their derivatives; dpkg-query and apt-cache.
 //	dnf      Fedora, RHEL and their rebuilds; rpm and dnf repoquery.
-//	pacman   Arch and Omarchy; pacman -Q and pacman -Si.
+//	pacman   Arch and Omarchy; pacman -Q and pacman -Si. Omarchy installs
+//	         with -S, because its guard hook refuses a direct -Syu.
 //
 // Nothing here starts a process. Every command is built as a value, previewed
 // by the caller and executed by the kit runner — the family's single exec
@@ -123,6 +124,33 @@ type Distro struct {
 	// VersionID is the os-release VERSION_ID field ("42", "24.04"). A rolling
 	// release leaves it empty, which is itself the answer.
 	VersionID string
+	// UpdateGuard reports that Omarchy's pacman guard hook is installed
+	// (OmarchyGuardHook). os-release does not say it: an Omarchy installed on
+	// top of an existing Arch keeps ID=arch, and the guard refuses a direct
+	// -Syu there all the same. DetectDistro fills it in; ParseOSRelease, which
+	// only reads text, leaves it false.
+	UpdateGuard bool
+}
+
+// OmarchyGuardHook is the pacman hook the `omarchy` package installs. It
+// aborts any direct system upgrade (`pacman -Syu`) that does not come from
+// `omarchy update`.
+const OmarchyGuardHook = "/usr/share/libalpm/hooks/00-omarchy-update-guard.hook"
+
+// Omarchy reports an Omarchy system, whose own update command is the only way
+// it lets the machine be upgraded: its pacman hook refuses a direct -Syu. It
+// is Omarchy by os-release (an ID or ID_LIKE starting with "omarchy", which
+// covers both Omarchy and Omarchy Server) or by the guard hook being there.
+func (d Distro) Omarchy() bool {
+	if d.UpdateGuard {
+		return true
+	}
+	for _, id := range append([]string{d.ID}, d.Like...) {
+		if strings.HasPrefix(strings.ToLower(id), "omarchy") {
+			return true
+		}
+	}
+	return false
 }
 
 // String renders the distribution the way a header shows it.
@@ -160,14 +188,18 @@ func matchesID(m Manager, id string) bool {
 	return false
 }
 
-// DetectDistro reads /etc/os-release. An unreadable file is not an error: it
-// only means the binary search decides the manager alone.
+// DetectDistro reads /etc/os-release and looks for Omarchy's pacman guard
+// hook. An unreadable file is not an error: it only means the binary search
+// decides the manager alone.
 func DetectDistro() Distro {
-	raw, err := os.ReadFile(osReleasePath)
-	if err != nil {
-		return Distro{}
+	var d Distro
+	if raw, err := os.ReadFile(osReleasePath); err == nil {
+		d = ParseOSRelease(string(raw))
 	}
-	return ParseOSRelease(string(raw))
+	if _, err := os.Stat(OmarchyGuardHook); err == nil {
+		d.UpdateGuard = true
+	}
+	return d
 }
 
 // ParseOSRelease reads the ID, ID_LIKE, PRETTY_NAME and VERSION_ID fields of an
@@ -477,7 +509,7 @@ func dpkgKnownNotInstalled(line string) bool {
 
 // Install builds the steps that install the named packages.
 func (r *Real) Install(names []string) ([]Command, error) {
-	return BuildInstall(r.manager, names)
+	return BuildInstallOn(r.manager, r.distro, names)
 }
 
 // Remove builds the steps that remove the named packages.
@@ -487,7 +519,7 @@ func (r *Real) Remove(names []string) ([]Command, error) {
 
 // Upgrade builds the steps that upgrade the named packages.
 func (r *Real) Upgrade(names []string) ([]Command, error) {
-	return BuildUpgrade(r.manager, names)
+	return BuildUpgradeOn(r.manager, r.distro, names)
 }
 
 // RepoSetup builds the steps that add the tui-tools repository, pinning the

@@ -204,6 +204,15 @@ The contract, in short:
   command line in the dialog is the command line that runs. A read is never
   marked privileged: listing what is installed must not raise a password
   prompt.
+- **Arch and Omarchy.** On Arch an install or upgrade is `pacman -Syu` with the
+  names, because a partial upgrade is not supported there. Omarchy refuses that:
+  its pacman hook aborts any direct `-Syu` that does not come from
+  `omarchy update`. `Distro.Omarchy()` recognises it (an os-release `ID` or
+  `ID_LIKE` starting with `omarchy`, or the guard hook being installed), and
+  `Install`/`Upgrade` then build `pacman -S --needed --noconfirm` with the
+  names, against the databases the repository setup's `-Sy` or the last
+  `omarchy update` synced, with an explanation that says the system itself
+  upgrades through `omarchy update`, not here (`OmarchyNote`).
 - **Repository.** `RepoStatus` reports whether `pkgs.tui.tools` is configured —
   an apt sources file naming it, a dnf `.repo`, or a `[tui-tools]` section
   reachable from `/etc/pacman.conf`, including through an `Include`.

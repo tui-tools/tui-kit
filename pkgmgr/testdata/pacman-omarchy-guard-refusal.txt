@@ -1,0 +1,20 @@
+:: Running pre-transaction hooks...
+(1/5) Checking Omarchy update entrypoint...
+
+Woah partner...
+
+This looks like a direct pacman system upgrade. Omarchy updates should normally
+run through:
+
+  omarchy update
+
+That path handles the update transcript, snapshot, keyrings, package upgrade,
+migrations, post-update hooks, shell update state, and restart checks together.
+
+If you really meant to bypass Omarchy for this transaction, rerun pacman with:
+
+  sudo env OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu
+
+error: command failed to execute correctly
+error: failed to commit transaction (failed to run transaction hooks)
+Errors occurred, no packages were upgraded.

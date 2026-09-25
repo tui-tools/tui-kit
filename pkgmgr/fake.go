@@ -205,7 +205,7 @@ func (f *Fake) RepoStatus() (RepoStatus, error) {
 
 // Install builds the steps that install the named packages.
 func (f *Fake) Install(names []string) ([]Command, error) {
-	return BuildInstall(f.Manager(), names)
+	return BuildInstallOn(f.Manager(), f.Machine, names)
 }
 
 // Remove builds the steps that remove them.
@@ -215,7 +215,7 @@ func (f *Fake) Remove(names []string) ([]Command, error) {
 
 // Upgrade builds the steps that upgrade them.
 func (f *Fake) Upgrade(names []string) ([]Command, error) {
-	return BuildUpgrade(f.Manager(), names)
+	return BuildUpgradeOn(f.Manager(), f.Machine, names)
 }
 
 // RepoSetup builds the steps that would add the repository.

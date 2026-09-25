@@ -193,7 +193,7 @@ func TestFakeInstalls(t *testing.T) {
 	// The preview carries the escalation prefix a privileged step would run
 	// with, and an unprivileged one carries none.
 	previews := fake.Previews()
-	if !strings.HasPrefix(previews[0], "sudo -n pacman -Sy") {
+	if !strings.HasPrefix(previews[0], "sudo -n pacman -S --needed") {
 		t.Errorf("preview = %q", previews[0])
 	}
 
