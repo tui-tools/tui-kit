@@ -270,6 +270,7 @@ jobs:
       # Provenance: a signed statement of which workflow, at which commit,
       # produced each file. `gh attestation verify <file> -R tui-tools/__TOOL__`
       # checks a download against it without any key to distribute.
+      # Needs a public repo: attestation is unavailable to the org's private repos, so go public before the first tag.
       - name: attest build provenance
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
