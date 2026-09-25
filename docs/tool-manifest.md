@@ -175,9 +175,10 @@ The schema refuses `stable` without `stableSince`, a `stableSince` below
 `1.0.0` (a 0.x release is beta by definition) and a `stableSince` on a beta
 manifest. `tools/render-install.py` renders the README banner from these two
 fields, between `<!-- stability:start -->` and `<!-- stability:end -->`, and
-fails when the latest tag is older than `stableSince`: a tool is stable since a
-release that exists. The markers are optional while a tool is beta and
-required once it is stable.
+warns (without failing) while the latest tag is older than `stableSince`: the
+promotion pull request lands before its v1.0.0 tag, so that tag already says
+stable. The markers are optional while a tool is beta and required once it is
+stable.
 
 ### `security`
 

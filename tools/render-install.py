@@ -29,7 +29,9 @@ It renders the family's "Beta." note for a manifest without `stability` (or
 with `"beta"`), and a "Stable since vX.Y.Z" line for `"stable"`. The markers
 are optional while a tool is beta, so a README with a hand-written banner keeps
 working; a stable tool must carry them, or the README would keep calling it
-beta. The bar a tool meets before it says `stable` is docs/stability.md.
+beta. The bar a tool meets before it says `stable` is docs/stability.md. A
+stable claim whose tag does not exist yet (the promotion PR, rendered with
+--version 1.0.0 or before the tag) is only a warning.
 """
 from __future__ import annotations
 
@@ -254,15 +256,13 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups())
 
 
-def stability_errors(manifest: dict, version: str | None) -> list[str]:
+def stability_errors(manifest: dict) -> list[str]:
     """What is wrong with the manifest's stability claim, if anything.
 
-    The schema already refuses a `stableSince` below 1.0.0 and a `stable`
-    without one; this repeats those two rules for a checkout that never runs
-    the schema, and adds the one only a repository can answer: the release
-    the claim starts at has to exist. `version` is the latest tag (or
-    --version); when it is unknown, as in a shallow clone without tags, that
-    part is skipped.
+    The schema already refuses a `stableSince` below 1.0.0, a `stable`
+    without one and a `stableSince` on a beta manifest; this repeats those
+    rules for a checkout that never runs the schema. Whether the release
+    exists yet is not an error: see stability_warnings.
     """
     stability = manifest.get("stability", "beta")
     since = manifest.get("stableSince")
@@ -281,22 +281,28 @@ def stability_errors(manifest: dict, version: str | None) -> list[str]:
             f"stableSince {since!r} is not a 1.0.0-or-later release: "
             "a 0.x tool is beta by definition"
         ]
-    if version is None:
-        return []
-    latest = parse_version(version)
-    if latest is None:
-        return []
-    if latest[0] < 1:
-        return [
-            f"stable is declared but the latest release is {version}: "
-            "tag 1.0.0 or later first, then promote (docs/stability.md)"
-        ]
-    if latest < parsed:
-        return [
-            f"stableSince {since} is newer than the latest release {version}: "
-            "a tool is stable since a release that exists"
-        ]
     return []
+
+
+def stability_warnings(manifest: dict, version: str | None) -> list[str]:
+    """Notes on a stable claim whose release is not tagged yet.
+
+    The README documents a state in the same pull request that finishes it,
+    so the promotion PR sets `stable` before the v1.0.0 tag exists: the tag
+    then carries "Stable since v1.0.0". A latest tag below `stableSince` is
+    therefore a pending promotion, reported but never an error. `version` is
+    the latest tag or --version; unknown (a shallow clone) says nothing.
+    """
+    if manifest.get("stability") != "stable" or version is None:
+        return []
+    since = parse_version(manifest.get("stableSince", ""))
+    latest = parse_version(version)
+    if since is None or latest is None or latest >= since:
+        return []
+    return [
+        f"stable since v{manifest['stableSince']}, pending that tag "
+        f"(latest is {version})"
+    ]
 
 
 def render_stability(manifest: dict) -> str:
@@ -381,11 +387,13 @@ def main() -> int:
     version = args.version or latest_version(args.manifest.resolve().parent)
     body = render(manifest, version, args.arch)
 
-    errors = stability_errors(manifest, version)
+    errors = stability_errors(manifest)
     if errors:
         for error in errors:
             print(f"{args.manifest}: {error}", file=sys.stderr)
         return 1
+    for warning in stability_warnings(manifest, version):
+        print(f"{args.manifest}: warning: {warning}", file=sys.stderr)
 
     current = args.readme.read_text()
     updated = splice(current, body)

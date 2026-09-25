@@ -59,10 +59,11 @@ required with `"stable"` and refused without it. See
   1.0.0, and a `stableSince` on a beta manifest. `make manifest` in a tool
   runs it.
 - `render-install.py` repeats those rules for a checkout that never runs the
-  schema, and adds the one only the repository can answer: the latest tag must
-  be 1.0.0 or later and at least `stableSince`. A stable claim always points at
-  a release that exists. In a clone without tags (a shallow CI checkout) that
-  part is skipped and the release is the reviewer's check.
+  schema, and fails on them. When the latest tag (or `--version`) is older
+  than `stableSince`, the promotion is pending: it prints "stable since
+  vX.Y.Z, pending that tag" as a warning and exits 0, in a render and in
+  `--check` alike. That is the promotion pull request itself, which lands
+  before its tag.
 - A stable tool must carry the stability markers in its README, or the render
   fails: a hand-written beta note would otherwise contradict the manifest.
 
@@ -71,19 +72,22 @@ promotion pull request shows.
 
 ## How to promote a tool
 
-1. Cut the release that is the first stable one, `v1.0.0`, through the usual
-   branch, pull request and tag from `main`. It still says beta, and that is
-   right: nothing has been claimed yet.
-2. Open a pull request in the tool that sets `"stability": "stable"` and
-   `"stableSince": "1.0.0"`, adds the stability markers where the beta note
-   was if the README does not have them yet, and runs `make readme`.
-3. In that pull request's description, link one piece of evidence per point
-   of the bar: the release, the contract section of the README, the package
-   upgrade run, the `compat/results.jsonl` lines, the real-case issue or
-   report, the green security runs and the release's provenance, and the guide
-   on tui.tools.
-4. Merge with CI green. The website and the README pick up the banner on
-   their next build; the next release ships it.
+The README documents a state in the same pull request that finishes it, so the
+v1.0.0 tag already carries "Stable since v1.0.0".
+
+1. Open one release pull request in the tool that sets `"stability": "stable"`
+   and `"stableSince": "1.0.0"`, adds the stability markers where the beta
+   note was if the README does not have them yet, and renders the README with
+   `render-install.py --version 1.0.0` (the version the tag will have).
+2. In its description, link one piece of evidence per point of the bar: the
+   contract section of the README, the package upgrade run, the
+   `compat/results.jsonl` lines, the real-case issue or report, the green
+   security runs and the provenance of the last release, and the guide on
+   tui.tools. Until the tag exists, CI shows the pending-promotion warning;
+   that is expected.
+3. Merge with CI green.
+4. Tag `v1.0.0` from `main`. The release, the packages and the website carry
+   the stable banner from that tag on.
 
 A promotion is not reversed silently. If a stable tool breaks its contract,
 the fix is a major release that follows point 2, not a return to beta.
