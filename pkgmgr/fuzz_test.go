@@ -126,3 +126,26 @@ func FuzzParseOSRelease(f *testing.F) {
 		}
 	})
 }
+
+// FuzzSplitCompanionTarget holds the companion check to what it guards: a
+// target it accepts can only be a plain word or repo/word, never an option,
+// a path, a glob or anything a shell would read.
+func FuzzSplitCompanionTarget(f *testing.F) {
+	for _, s := range []string{"headscale", "tui-tools/headscale", "-y",
+		"a/b/c", "tui-tools/", "x;y", "../x"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, target string) {
+		repo, name, err := SplitCompanionTarget(target)
+		if err != nil {
+			return
+		}
+		if strings.HasPrefix(target, "-") || strings.Count(target, "/") > 1 ||
+			strings.ContainsAny(target, " \t\n$;&|<>`*?[]=\\'\"") {
+			t.Fatalf("accepted %q", target)
+		}
+		if !ValidCompanionName(name) || (repo != "" && target != repo+"/"+name) {
+			t.Fatalf("%q split into %q, %q", target, repo, name)
+		}
+	})
+}

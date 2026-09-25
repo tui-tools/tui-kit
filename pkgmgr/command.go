@@ -202,6 +202,11 @@ func BuildInstalled(manager Manager, names []string) (Command, error) {
 	if err := CheckNames(names); err != nil {
 		return Command{}, err
 	}
+	return installedCmd(manager, names)
+}
+
+// installedCmd is BuildInstalled for names already validated.
+func installedCmd(manager Manager, names []string) (Command, error) {
 	switch manager {
 	case ManagerAPT:
 		// dpkg also answers names it knows without them being installed
@@ -243,6 +248,11 @@ func BuildAvailable(manager Manager, names []string) (Command, error) {
 	if err := CheckNames(names); err != nil {
 		return Command{}, err
 	}
+	return availableCmd(manager, names)
+}
+
+// availableCmd is BuildAvailable for names already validated.
+func availableCmd(manager Manager, names []string) (Command, error) {
 	switch manager {
 	case ManagerAPT:
 		return Command{
@@ -335,6 +345,11 @@ func BuildInstall(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
 	}
+	return installSteps(manager, names)
+}
+
+// installSteps is BuildInstall for targets already validated.
+func installSteps(manager Manager, names []string) ([]Command, error) {
 	refresh, err := BuildRefresh(manager)
 	if err != nil {
 		return nil, err
@@ -415,13 +430,7 @@ func BuildInstallOmarchy(names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
 	}
-	return []Command{{
-		Argv: append([]string{
-			"pacman", "-S", "--needed", "--noconfirm",
-		}, names...),
-		Privileged: true,
-		Explain:    "Install " + strings.Join(names, ", ") + ". " + OmarchyNote,
-	}}, nil
+	return omarchySteps("Install", names), nil
 }
 
 // BuildUpgradeOmarchy builds the upgrade on Omarchy: the same `-S --needed`
@@ -433,13 +442,20 @@ func BuildUpgradeOmarchy(names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
 	}
+	return omarchySteps("Upgrade", names), nil
+}
+
+// omarchySteps is the one step an Omarchy install or upgrade is. `-S
+// --needed` both installs a missing package and brings an installed one to
+// the version the synced databases carry, so only the verb differs.
+func omarchySteps(verb string, names []string) []Command {
 	return []Command{{
 		Argv: append([]string{
 			"pacman", "-S", "--needed", "--noconfirm",
 		}, names...),
 		Privileged: true,
-		Explain:    "Upgrade " + strings.Join(names, ", ") + ". " + OmarchyNote,
-	}}, nil
+		Explain:    verb + " " + strings.Join(names, ", ") + ". " + OmarchyNote,
+	}}
 }
 
 // BuildRemove builds the steps that take the named packages off the machine.
@@ -450,6 +466,11 @@ func BuildRemove(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
 	}
+	return removeSteps(manager, names)
+}
+
+// removeSteps is BuildRemove for names already validated.
+func removeSteps(manager Manager, names []string) ([]Command, error) {
 	switch manager {
 	case ManagerAPT:
 		return []Command{{
@@ -486,6 +507,11 @@ func BuildUpgrade(manager Manager, names []string) ([]Command, error) {
 	if err := CheckNames(names); err != nil {
 		return nil, err
 	}
+	return upgradeSteps(manager, names)
+}
+
+// upgradeSteps is BuildUpgrade for targets already validated.
+func upgradeSteps(manager Manager, names []string) ([]Command, error) {
 	refresh, err := BuildRefresh(manager)
 	if err != nil {
 		return nil, err
