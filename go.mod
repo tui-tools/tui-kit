@@ -1,6 +1,6 @@
 module github.com/tui-tools/tui-kit
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
