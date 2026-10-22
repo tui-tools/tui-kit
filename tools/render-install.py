@@ -25,7 +25,7 @@ The same run owns the stability banner at the top of the README, between
     <!-- stability:start -->
     <!-- stability:end -->
 
-It renders the family's "Beta." note for a manifest without `stability` (or
+It renders the family's "Beta" note for a manifest without `stability` (or
 with `"beta"`), and a "Stable since vX.Y.Z" line for `"stable"`. The markers
 are optional while a tool is beta, so a README with a hand-written banner keeps
 working; a stable tool must carry them, or the README would keep calling it
@@ -53,10 +53,10 @@ STABILITY_END = "<!-- stability:end -->"
 # it, so a reader can see what the word promises.
 STABILITY_DOC = "https://github.com/tui-tools/tui-kit/blob/main/docs/stability.md"
 
-# The family's beta note, word for word as the READMEs carried it by hand.
-BETA_BANNER = """> **Beta.** The family is days old and still changing. Package names, flags
-> and keys may move without notice until 1.0. Pin versions, and report what
-> breaks."""
+# The family's beta note, word for word as the family website words it
+# (tui-tools.github.io, BetaBanner.astro and catalog.json).
+BETA_BANNER = """> **Beta** tools may still change keys, flags or output before their 1.0;
+> stable tools follow semver. Pin versions, and report what breaks."""
 
 # The order the channels are presented in, and how each one is titled. A
 # reader picks the row that matches their machine, so the distributions come

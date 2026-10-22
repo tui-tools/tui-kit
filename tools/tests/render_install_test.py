@@ -111,7 +111,7 @@ class StabilityWarningsTest(unittest.TestCase):
 class BannerTest(unittest.TestCase):
     def test_beta_keeps_the_family_wording(self):
         banner = renderer.render_stability(manifest())
-        self.assertTrue(banner.startswith("> **Beta.** The family is days old"))
+        self.assertTrue(banner.startswith("> **Beta** tools may still change keys"))
         self.assertEqual(banner, renderer.render_stability(manifest(stability="beta")))
 
     def test_stable_names_the_release_and_links_the_bar(self):
@@ -156,7 +156,7 @@ class CommandLineTest(unittest.TestCase):
     def test_beta_renders_the_banner(self):
         result, readme = self.run_script(manifest(), "0.4.0")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("**Beta.**", readme)
+        self.assertIn("**Beta** tools", readme)
         self.assertIn("tar -xzf tui-example.tar.gz", readme)
 
     def test_stable_renders_the_since_line(self):
@@ -164,7 +164,7 @@ class CommandLineTest(unittest.TestCase):
             manifest(stability="stable", stableSince="1.0.0"), "1.0.0")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("**Stable since v1.0.0.**", readme)
-        self.assertNotIn("**Beta.**", readme)
+        self.assertNotIn("**Beta** tools", readme)
 
     def test_a_pending_promotion_renders_and_warns(self):
         # The promotion PR: stable is set before the v1.0.0 tag exists.
