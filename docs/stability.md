@@ -48,8 +48,9 @@ required with `"stable"` and refused without it. See
 `tools/render-install.py` renders the README banner from it, between
 `<!-- stability:start -->` and `<!-- stability:end -->`:
 
-- beta keeps the family's note, "Beta. The family is days old and still
-  changing...";
+- beta keeps the family's note, "Beta tools may still change keys, flags or
+  output before their 1.0; stable tools follow semver. Pin versions, and
+  report what breaks.";
 - stable renders "Stable since v1.0.0." with one line on what semver promises
   and a link to this page.
 
