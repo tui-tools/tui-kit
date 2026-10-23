@@ -60,6 +60,7 @@ func TestPreviewAndDescribe(t *testing.T) {
 	tests := []struct {
 		name         string
 		privilege    []string
+		detach       []string
 		wantPreview  string
 		wantDescribe string
 	}{
@@ -74,11 +75,18 @@ func TestPreviewAndDescribe(t *testing.T) {
 			wantPreview:  "/usr/bin/sudo -n toolctl status",
 			wantDescribe: "toolctl via /usr/bin/sudo -n",
 		},
+		{
+			name:         "sudo -n, then setsid",
+			privilege:    []string{"/usr/bin/sudo", "-n"},
+			detach:       []string{"/usr/bin/setsid", "-w"},
+			wantPreview:  "/usr/bin/sudo -n /usr/bin/setsid -w toolctl status",
+			wantDescribe: "toolctl via /usr/bin/sudo -n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Runner{Name: "toolctl", Bin: "/usr/sbin/toolctl",
-				Privilege: tc.privilege}
+				Privilege: tc.privilege, Detach: tc.detach}
 			cmd := Command{Argv: []string{"toolctl", "status"}}
 			if got := r.Preview(cmd); got != tc.wantPreview {
 				t.Errorf("Preview() = %q, want %q", got, tc.wantPreview)

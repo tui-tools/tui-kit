@@ -12,11 +12,18 @@
 // configured prefix ("sudo -n") once at construction, so a tool that cannot
 // escalate says so at startup instead of failing halfway through a change.
 //
-// No child gets a terminal. Every process the Runner starts, read or mutation,
-// escalated or not, leads a session of its own with no controlling terminal,
-// so nothing it runs can prompt on a terminal hidden behind the TUI: a program
-// that opens /dev/tty fails at once instead of waiting forever. A step that
-// genuinely needs the terminal is a hand-off (tea.Exec), not a runner step.
+// No command gets a terminal. Every command the Runner starts, read or
+// mutation, escalated or not, leads a session of its own with no controlling
+// terminal, so nothing it runs can prompt on a terminal hidden behind the TUI:
+// a program that opens /dev/tty fails at once instead of waiting forever. A
+// step that genuinely needs the terminal is a hand-off (tea.Exec), not a
+// runner step.
+//
+// sudo itself is the one exception, and only sudo: it stays in the TUI's
+// session, and setsid(1) after it starts the new session for the command
+// (`sudo -n setsid -w ...`). sudo keeps its ticket per terminal and session,
+// so that is what lets a `sudo -v` run in the same terminal before the tool
+// started be used by every escalated command (tui-kit#42).
 package runner
 
 import (
@@ -51,8 +58,9 @@ var ErrNotAvailable = errors.New("command not available")
 const DefaultTimeout = 15 * time.Second
 
 // MutationGrace is how long a cancelled mutation is given to stop on its own
-// after SIGTERM before it is killed. sudo relays the signal to the command, and
-// pacman, apt and dnf all clean up their locks on SIGTERM; SIGKILL leaves them.
+// after SIGTERM before it is killed. The signal reaches the command itself (an
+// escalated one through `sudo -n kill`, see stopDetached), and pacman, apt and
+// dnf all clean up their locks on SIGTERM; SIGKILL leaves them.
 const MutationGrace = 10 * time.Second
 
 // Command is a single invocation the user is about to run. Argv excludes any
@@ -159,6 +167,13 @@ type Runner struct {
 	Name string
 	// Privilege is the resolved escalation prefix; nil when running directly.
 	Privilege []string
+	// Detach is what comes right after Privilege to give the escalated
+	// command a session of its own: the resolved setsid(1) and -w. It is nil
+	// when running directly, and when the host has no setsid(1), in which
+	// case the escalation command itself is started in a new session, as
+	// before tui-kit#42 (no command gets a terminal either way, but a ticket
+	// from `sudo -v` cannot be used then).
+	Detach []string
 	// Timeout bounds each read.
 	Timeout time.Duration
 	// MutationTimeout bounds each mutation; zero means none.
@@ -236,8 +251,15 @@ func New(opts Options) (*Runner, error) {
 			ErrNotAvailable, opts.SudoPrefix[0])
 	}
 	r.Privilege = append([]string{resolved}, opts.SudoPrefix[1:]...)
+	if setsid, err := look("setsid", setsidPaths, ""); err == nil {
+		r.Detach = []string{setsid, "-w"}
+	}
 	return r, nil
 }
+
+// setsidPaths are where util-linux installs setsid(1), for a PATH without the
+// directory.
+var setsidPaths = []string{"/usr/bin/setsid", "/bin/setsid"}
 
 // Privileged reports whether commands are wrapped in an escalation prefix.
 func (r *Runner) Privileged() bool { return len(r.Privilege) > 0 }
@@ -257,15 +279,17 @@ func (r *Runner) Preview(cmd Command) string {
 	if !r.Privileged() {
 		return cmd.String()
 	}
+	prefix := Join(append(append([]string{}, r.Privilege...), r.Detach...))
 	if len(cmd.Env) > 0 {
 		// The variables are set by env(1) after escalation; see Command.Env.
-		return Join(r.Privilege) + " env " + cmd.String()
+		return prefix + " env " + cmd.String()
 	}
-	return Join(r.Privilege) + " " + cmd.String()
+	return prefix + " " + cmd.String()
 }
 
 // argv builds the invocation: the resolved binary, the command's own
-// arguments, and the privilege prefix when the call needs it. A command with
+// arguments, and the privilege prefix and setsid(1) when the call needs them
+// (see Runner.Detach). A command with
 // variables of its own goes through `env` after the prefix, so escalation
 // cannot drop them; run directly, it gets them in its environment instead
 // (see exec).
@@ -278,7 +302,7 @@ func (r *Runner) argv(cmd Command, privileged bool) (bin string, args []string) 
 	if !privileged || !r.Privileged() {
 		return r.Bin, rest
 	}
-	args = append([]string{}, r.Privilege[1:]...)
+	args = append(append([]string{}, r.Privilege[1:]...), r.Detach...)
 	if len(cmd.Env) > 0 {
 		args = append(append(args, "env"), cmd.Env...)
 	}
@@ -315,20 +339,34 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
 	}
 
 	bin, args := r.argv(cmd, privileged)
+	escalated := privileged && r.Privileged()
 	c := exec.CommandContext(ctx, bin, args...) //nolint:gosec // argv is built here, never from a shell string
-	// Every child, read or mutation, escalated or not, starts in a session of
+	// Every command, read or mutation, escalated or not, runs in a session of
 	// its own and so has no controlling terminal. Pipes and /dev/null on
 	// stdio are not enough: a child left in the TUI's session inherits its
-	// terminal, and sudo with `Defaults use_pty` (Ubuntu's sudoers, sudo-rs)
-	// even hands the command a fresh pty. debconf, whiptail, a password
-	// prompt, an editor or a pager then opens /dev/tty and waits there,
-	// invisible behind the TUI, forever. Without a controlling terminal that
-	// open fails at once (ENXIO) and the step fails with an error instead.
-	// A step that genuinely needs the terminal is not a runner step: it is a
-	// hand-off (tea.Exec), which gives the terminal away on purpose.
-	c.SysProcAttr = detachedSession()
+	// terminal, and sudo with `Defaults use_pty` (Ubuntu's sudoers, sudo-rs,
+	// and upstream's default since 1.9.14) even hands the command a fresh pty.
+	// debconf, whiptail, a password prompt, an editor or a pager then opens
+	// /dev/tty and waits there, invisible behind the TUI, forever. Without a
+	// controlling terminal that open fails at once (ENXIO) and the step fails
+	// with an error instead (tui-kit#35). A step that genuinely needs the
+	// terminal is not a runner step: it is a hand-off (tea.Exec), which gives
+	// the terminal away on purpose.
+	//
+	// An escalated command gets its session from setsid(1) after sudo, and
+	// sudo itself stays in the TUI's session: sudo matches its ticket on the
+	// terminal and the session id, so a sudo leading a session of its own
+	// could never use the ticket of a `sudo -v` run before the tool started
+	// (tui-kit#42). Without setsid(1) on the host, sudo gets the new session
+	// as before, and only a passwordless sudo or root works.
+	if !escalated || len(r.Detach) == 0 {
+		c.SysProcAttr = detachedSession()
+	}
 	if mutation {
 		c.Cancel = func() error { return c.Process.Signal(syscall.SIGTERM) }
+		if escalated && len(r.Detach) > 0 {
+			c.Cancel = func() error { return r.stopDetached(c.Process) }
+		}
 		c.WaitDelay = MutationGrace
 	}
 	c.Env = append(os.Environ(), r.env...)
@@ -367,9 +405,13 @@ func (r *Runner) wrapErr(cmd Command, output string, err error,
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("`%s` was cancelled", preview)
 	}
-	if r.Privileged() && strings.Contains(output, "password is required") {
-		return fmt.Errorf(
-			"sudo needs a password: run `sudo -v` in another terminal, then retry")
+	if r.Privileged() && needsPassword(output) {
+		if len(r.Detach) == 0 {
+			return errors.New("sudo needs a password, and without setsid(1) " +
+				"this host cannot pass a `sudo -v` ticket on: start the tool with sudo")
+		}
+		return errors.New("sudo needs a password: quit, run `sudo -v` in this " +
+			"terminal, then start the tool again (or start it with sudo)")
 	}
 	// The output may be a terminal program's screen rather than text;
 	// StatusLine keeps the one readable line that says why it failed.
@@ -377,6 +419,14 @@ func (r *Runner) wrapErr(cmd Command, output string, err error,
 		return fmt.Errorf("`%s` failed: %s", preview, line)
 	}
 	return fmt.Errorf("`%s` failed: %w", preview, err)
+}
+
+// needsPassword reports whether escalation was refused for want of a password:
+// sudo's "a password is required" and sudo-rs's "interactive authentication
+// is required", both printed when `-n` forbids asking.
+func needsPassword(output string) bool {
+	return strings.Contains(output, "password is required") ||
+		strings.Contains(output, "authentication is required")
 }
 
 // FirstLine keeps a status-line message to a single line.
