@@ -108,6 +108,7 @@ var searchPaths = map[string][]string{
 	"tee":         {"/usr/bin/tee", "/bin/tee"},
 	"install":     {"/usr/bin/install", "/bin/install"},
 	"chmod":       {"/usr/bin/chmod", "/bin/chmod"},
+	"rm":          {"/usr/bin/rm", "/bin/rm"},
 	"mktemp":      {"/usr/bin/mktemp", "/bin/mktemp"},
 	"pacman-conf": {"/usr/bin/pacman-conf", "/bin/pacman-conf"},
 }

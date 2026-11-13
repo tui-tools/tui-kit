@@ -3,6 +3,7 @@ package pkgmgr
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -152,6 +153,46 @@ func TestParseKeyFingerprint(t *testing.T) {
 	}
 	if ParseKeyFingerprint("gpg: no valid OpenPGP data found") != "" {
 		t.Errorf("a failed read produced a fingerprint")
+	}
+}
+
+// TestParsePrimaryFingerprints: every primary key in the file is reported,
+// in order, so a caller can tell one key from several. A subkey is not a
+// primary and must not be counted.
+func TestParsePrimaryFingerprints(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		out  string
+		want []string
+	}{
+		{"one key with a subkey", fixture(t, "gpg-show-keys.txt"),
+			[]string{"1111222233334444555566667777888899990000"}},
+		{"the pinned key and another", fixture(t, "gpg-show-keys-two.txt"),
+			[]string{"1111222233334444555566667777888899990000",
+				"B0B1656209CAB006BBE12DB6C2CE9AAB5D4BA7B5"}},
+		// gpg still lists a key it considers invalid, flagged `i`, and apt
+		// would still carry it in the keyring: it counts.
+		{"a second key gpg marks invalid", fixture(t, "gpg-show-keys-hidden.txt"),
+			[]string{"1111222233334444555566667777888899990000",
+				"B0B1656209CAB006BBE12DB6C2CE9AAB5D4BA7B5"}},
+		{"a secret key counts as a primary",
+			"sec:u:255:22:0A1B2C3D4E5F6071:1756512000:::u:::scESC:::+::ed25519:::0:\n" +
+				"fpr:::::::::1111222233334444555566667777888899990000:\n",
+			[]string{"1111222233334444555566667777888899990000"}},
+		// A primary whose fingerprint cannot be read still counts, as "".
+		{"a primary without a fingerprint",
+			"pub:-:255:22:0A1B2C3D4E5F6071:1756512000:::-:::scESC:::::ed25519:::0:\n" +
+				"uid:-::::1756512000::0123::x <x@example.invalid>::::::::::0:\n",
+			[]string{""}},
+		// An fpr: record with no primary before it belongs to nothing.
+		{"a bare fingerprint record",
+			"fpr:::::::::1111222233334444555566667777888899990000:\n", nil},
+		{"gpg failed", "gpg: no valid OpenPGP data found", nil},
+	} {
+		got := ParsePrimaryFingerprints(tc.out)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") || len(got) != len(tc.want) {
+			t.Errorf("%s: primaries = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 

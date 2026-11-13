@@ -564,12 +564,17 @@ type Setup struct {
 	Fingerprint string
 }
 
-// Match reports whether the output of Steps[Verify] carries the pinned key. A
-// caller runs the step, hands the output here, and stops the sequence when
-// this is false.
+// Match reports whether the output of Steps[Verify] shows exactly the pinned
+// key: one primary key, and its fingerprint the pinned one. A caller runs the
+// step, hands the output here, and stops the sequence when this is false.
+//
+// One key, not "the pinned key first": a file carrying the pinned key and
+// another after it would have both written to apt's keyring, and either could
+// then sign the repository. That is the substitution the pin exists to stop.
 func (s Setup) Match(out string) bool {
-	got := ParseKeyFingerprint(out)
-	return got != "" && got == s.Fingerprint
+	primaries := ParsePrimaryFingerprints(out)
+	return s.Fingerprint != "" && len(primaries) == 1 &&
+		primaries[0] == s.Fingerprint
 }
 
 // The files the setup writes. They are named here rather than inline because
@@ -590,7 +595,22 @@ const (
 	// pacman.conf gains one Include line rather than a block that a later
 	// setup would have to find again.
 	PacmanConfDir = "/etc/pacman.d"
+	// StagingRoot holds the directory the signing key is downloaded into and
+	// checked in before it is copied anywhere a manager trusts keys from. It
+	// is root's alone to write to, so the file checked is the file copied.
+	StagingRoot = "/run"
 )
+
+// stagingDir is the setup's own directory under StagingRoot. The name is the
+// validated repository name, so it never needs quoting.
+func stagingDir(repo RepoConfig) string {
+	return StagingRoot + "/" + repo.Name + "-setup"
+}
+
+// stagedKey is where the downloaded, not yet trusted, key sits.
+func stagedKey(repo RepoConfig) string {
+	return stagingDir(repo) + "/pubkey.asc"
+}
 
 // BuildRepoSetup returns the steps that add the tui-tools repository to this
 // manager, with the signing key pinned by fingerprint.
@@ -599,6 +619,12 @@ const (
 // already do on real machines, with one difference: nothing here is piped
 // through a shell, so the key is downloaded to a root-owned directory as its
 // own step and the repository files are written by `tee` from standard input.
+//
+// The key is downloaded into a staging directory (stagingDir) and checked
+// there. Only after Setup.Match accepts it is it copied to where the manager
+// trusts keys from, so a refused key is never left at a path that an existing
+// repository configuration names. The staging directory is removed once the
+// key is in place.
 //
 // The fingerprint is the caller's. This package has no business carrying the
 // family's key material, and a fingerprint compiled into a library is one
@@ -624,27 +650,63 @@ func BuildRepoSetup(manager Manager, repo RepoConfig, fingerprint string) (Setup
 	}
 }
 
-// fetchKey downloads the armoured public key into a root-owned directory.
+// makeStaging creates the staging directory. Root owns it and alone can write
+// to it, and /run itself is root's, so nobody else can plant or swap the file
+// between the check and the copy. It stays readable so the check can run
+// without privilege: what is in it is a public key, and parsing a downloaded
+// file is better done without root.
+func makeStaging(repo RepoConfig) Command {
+	dir := stagingDir(repo)
+	return Command{
+		Argv:       []string{"install", "-d", "-m", "0755", dir},
+		Privileged: true,
+		Explain:    "Make a root-only staging directory, " + dir + ", to check the key in",
+	}
+}
+
+// fetchKey downloads the armoured public key into the staging directory.
 // --proto and --tlsv1.2 are there so a redirect cannot move the download onto
 // a transport that a signing key has no business travelling over.
-func fetchKey(repo RepoConfig, dest string) Command {
+func fetchKey(repo RepoConfig) Command {
+	dest := stagedKey(repo)
 	return Command{
 		Argv: []string{
 			"curl", "-fsSL", "--proto", "=https", "--tlsv1.2", "--retry", "3",
 			"-o", dest, repo.URL + "/pubkey.asc",
 		},
 		Privileged: true,
-		Explain:    "Download the repository signing key to " + dest,
+		Explain:    "Download the repository signing key to " + dest + ", not yet trusted",
 	}
 }
 
 // showKey is the step whose output is compared against the pinned
 // fingerprint. It reads a file and prints what is in it, so it needs no
 // privilege.
-func showKey(dest, fpr string) Command {
+func showKey(repo RepoConfig, fpr string) Command {
 	return Command{
-		Argv:    []string{"gpg", "--show-keys", "--with-colons", dest},
-		Explain: "Read the downloaded key's fingerprint; it must be " + fpr,
+		Argv: []string{"gpg", "--show-keys", "--with-colons", stagedKey(repo)},
+		Explain: "Read the downloaded key; it must be one key, " + fpr +
+			", or nothing is trusted",
+	}
+}
+
+// placeKey copies a checked file from the staging directory to where the
+// manager reads it, readable by every user and writable by root.
+func placeKey(src, dest string) Command {
+	return Command{
+		Argv:       []string{"install", "-m", "0644", src, dest},
+		Privileged: true,
+		Explain:    "Put the checked key in " + dest,
+	}
+}
+
+// dropStaging removes the staging directory once the key has been placed.
+func dropStaging(repo RepoConfig) Command {
+	dir := stagingDir(repo)
+	return Command{
+		Argv:       []string{"rm", "-r", "-f", dir},
+		Privileged: true,
+		Explain:    "Remove the staging directory " + dir,
 	}
 }
 
@@ -662,13 +724,13 @@ func writeFile(path, body, explain string) Command {
 // setupAPT mirrors install.sh's apt path: a keyring directory, the dearmoured
 // key beside it, one sources file naming it, and a refresh.
 func setupAPT(repo RepoConfig, fpr string) Setup {
-	armoured := APTKeyringDir + "/" + repo.Name + ".asc"
 	keyring := APTKeyringDir + "/" + repo.Name + ".gpg"
+	staged := stagingDir(repo) + "/" + repo.Name + ".gpg"
 	line := fmt.Sprintf("deb [signed-by=%s] %s/deb %s %s\n",
 		keyring, repo.URL, repo.Suite, repo.Component)
 	refresh, _ := BuildRefresh(ManagerAPT)
 	return Setup{
-		Verify:      2,
+		Verify:      3,
 		Fingerprint: fpr,
 		Steps: []Command{
 			{
@@ -676,20 +738,19 @@ func setupAPT(repo RepoConfig, fpr string) Setup {
 				Privileged: true,
 				Explain:    "Make sure " + APTKeyringDir + " exists",
 			},
-			fetchKey(repo, armoured),
-			showKey(armoured, fpr),
+			makeStaging(repo),
+			fetchKey(repo),
+			showKey(repo, fpr),
 			{
 				Argv: []string{
-					"gpg", "--batch", "--yes", "--dearmor", "-o", keyring, armoured,
+					"gpg", "--batch", "--yes", "--dearmor", "-o", staged,
+					stagedKey(repo),
 				},
 				Privileged: true,
 				Explain:    "Convert the key to the binary form apt reads",
 			},
-			{
-				Argv:       []string{"chmod", "0644", keyring},
-				Privileged: true,
-				Explain:    "Let apt read the keyring as any user",
-			},
+			placeKey(staged, keyring),
+			dropStaging(repo),
 			writeFile(APTSourcesDir+"/"+repo.Name+".list", line,
 				"Add the repository, signed by that key alone"),
 			refresh,
@@ -716,7 +777,7 @@ metadata_expire=1h
 `, repo.Name, repo.Name, repo.URL, key)
 	refresh, _ := BuildRefresh(ManagerDNF)
 	return Setup{
-		Verify:      2,
+		Verify:      3,
 		Fingerprint: fpr,
 		Steps: []Command{
 			{
@@ -724,8 +785,11 @@ metadata_expire=1h
 				Privileged: true,
 				Explain:    "Make sure " + DNFKeyDir + " exists",
 			},
-			fetchKey(repo, key),
-			showKey(key, fpr),
+			makeStaging(repo),
+			fetchKey(repo),
+			showKey(repo, fpr),
+			placeKey(stagedKey(repo), key),
+			dropStaging(repo),
 			{
 				Argv:       []string{"rpm", "--import", key},
 				Privileged: true,
@@ -756,7 +820,7 @@ Server = %s/arch/$arch
 	include := fmt.Sprintf("\n# Added by tui-tools.\nInclude = %s\n", conf)
 	refresh, _ := BuildRefresh(ManagerPacman)
 	return Setup{
-		Verify:      2,
+		Verify:      3,
 		Fingerprint: fpr,
 		Steps: []Command{
 			{
@@ -764,8 +828,11 @@ Server = %s/arch/$arch
 				Privileged: true,
 				Explain:    "Make sure " + PacmanConfDir + " exists",
 			},
-			fetchKey(repo, key),
-			showKey(key, fpr),
+			makeStaging(repo),
+			fetchKey(repo),
+			showKey(repo, fpr),
+			placeKey(stagedKey(repo), key),
+			dropStaging(repo),
 			{
 				Argv:       []string{"pacman-key", "--add", key},
 				Privileged: true,

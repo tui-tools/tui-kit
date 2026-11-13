@@ -182,6 +182,11 @@ func parseAvailable(manager Manager, out string) map[string]string {
 // `gpg --show-keys --with-colons`, which prints it as the tenth field of the
 // first `fpr:` record — the primary key's. It returns "" when there is none,
 // and the caller treats that as a key it must not import.
+//
+// It looks at the first key only, so it cannot tell a file holding one key
+// from a file holding that key and another after it. Deciding whether a
+// downloaded key may be trusted is Setup.Match's job, which reads every
+// primary through ParsePrimaryFingerprints.
 func ParseKeyFingerprint(out string) string {
 	for _, line := range splitLines(out) {
 		if !strings.HasPrefix(line, "fpr:") {
@@ -198,4 +203,47 @@ func ParseKeyFingerprint(out string) string {
 		return strings.ToUpper(fpr)
 	}
 	return ""
+}
+
+// ParsePrimaryFingerprints reads every primary key out of
+// `gpg --show-keys --with-colons`, in the order gpg printed them. A primary is
+// a `pub:` record (or `sec:`, for a file that carries a secret key), and its
+// fingerprint is the `fpr:` record that follows it before any user id or
+// subkey. A subkey's fingerprint is not a primary and is not reported.
+//
+// A primary whose fingerprint cannot be read is still reported, as "", so the
+// length of the result is the number of keys gpg saw, which is what the pin
+// check counts. An `fpr:` record that no primary precedes belongs to nothing
+// and is ignored. Fingerprints are upper-cased.
+func ParsePrimaryFingerprints(out string) []string {
+	var primaries []string
+	// expecting is true between a primary record and its fingerprint.
+	expecting := false
+	for _, line := range splitLines(out) {
+		record, _, _ := strings.Cut(line, ":")
+		switch record {
+		case "pub", "sec":
+			primaries = append(primaries, "")
+			expecting = true
+		case "fpr":
+			if !expecting {
+				continue
+			}
+			expecting = false
+			fields := strings.Split(line, ":")
+			if len(fields) < 10 {
+				continue
+			}
+			fpr := strings.TrimSpace(fields[9])
+			if fingerprintRe.MatchString(fpr) {
+				primaries[len(primaries)-1] = strings.ToUpper(fpr)
+			}
+		case "uid", "uat", "sub", "ssb":
+			// A user id or a subkey ends the primary's own records, so a
+			// later fpr: is not the primary's. Any other record (a keygrip,
+			// a revocation key) is passed over.
+			expecting = false
+		}
+	}
+	return primaries
 }

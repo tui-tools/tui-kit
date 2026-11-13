@@ -267,7 +267,11 @@ The contract, in short:
   `RepoSetup(fingerprint)` returns the steps that add it, mirroring
   `pkgs/install.sh` and Omarchy Server's `tui-tools` addon, with the key pinned
   by the caller's fingerprint: the returned `Setup` names the step whose output
-  must match before anything imports the key. The fingerprint is never
+  must match before anything imports the key. `Setup.Match` accepts a file
+  holding exactly one primary key, the pinned one; a second key beside it is a
+  refusal. The key is downloaded to and checked in a root-only staging
+  directory under `/run`, and copied to where the manager trusts keys from only
+  after the check, so a refused key is never left there. The fingerprint is never
   compiled in — one that lives in a library is one that cannot be rotated
   without a release.
 - **Exec.** Nothing in `pkgmgr` starts a process. Every command is executed by
@@ -364,6 +368,7 @@ you touch a parser:
 
 ```sh
 go test -run=^$ -fuzz=FuzzParseKeyFingerprint -fuzztime=5m ./pkgmgr/
+go test -run=^$ -fuzz=FuzzParsePrimaryFingerprints -fuzztime=5m ./pkgmgr/
 ```
 
 A crash writes its input under `testdata/fuzz/`; commit that file and it

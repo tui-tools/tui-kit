@@ -110,6 +110,31 @@ func FuzzParseKeyFingerprint(f *testing.F) {
 	})
 }
 
+// FuzzParsePrimaryFingerprints holds the parser the pin check counts with to
+// its shape: one entry per primary, each either "" or a full upper-case
+// fingerprint, and never more entries than primary records in the input.
+func FuzzParsePrimaryFingerprints(f *testing.F) {
+	seed(f, "gpg-show-keys.txt", "gpg-show-keys-two.txt", "gpg-show-keys-hidden.txt")
+	f.Fuzz(func(t *testing.T, out string) {
+		got := ParsePrimaryFingerprints(out)
+		records := 0
+		for _, line := range splitLines(out) {
+			if strings.HasPrefix(line, "pub:") || strings.HasPrefix(line, "sec:") ||
+				line == "pub" || line == "sec" {
+				records++
+			}
+		}
+		if len(got) != records {
+			t.Fatalf("%d primaries for %d primary records", len(got), records)
+		}
+		for _, fpr := range got {
+			if fpr != "" && (!fingerprintRe.MatchString(fpr) || fpr != strings.ToUpper(fpr)) {
+				t.Fatalf("returned something that is not a full fingerprint: %q", fpr)
+			}
+		}
+	})
+}
+
 func FuzzParseOSRelease(f *testing.F) {
 	seed(f, "os-release-ubuntu.txt", "os-release-fedora.txt", "os-release-omarchy.txt")
 	f.Fuzz(func(t *testing.T, text string) {
