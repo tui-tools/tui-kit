@@ -310,6 +310,13 @@ func TestRepoSetupPinsTheKey(t *testing.T) {
 					manager, i, setup.Verify)
 			}
 		}
+		// The key is read where it was downloaded, and that is not where
+		// anything trusts a key from.
+		staged := verify.Argv[len(verify.Argv)-1]
+		if !strings.HasPrefix(staged, stagingDir(RepoConfig{}.normalize())+"/") {
+			t.Errorf("%s reads the key at %q, not in the staging directory",
+				manager, staged)
+		}
 		if !setup.Match(fixtureFingerprintOutput) {
 			t.Errorf("%s did not match its own pinned fingerprint", manager)
 		}
@@ -324,6 +331,157 @@ func TestRepoSetupPinsTheKey(t *testing.T) {
 				manager, argv(last), argv(refresh))
 		}
 	}
+}
+
+// TestSetupMatchWantsExactlyThePinnedKey: the downloaded file has to hold one
+// primary key and that key has to be the pinned one. A file carrying the
+// pinned key first and another after it is the attack the pin exists for:
+// apt's keyring would take both, and either could then sign the repository.
+func TestSetupMatchWantsExactlyThePinnedKey(t *testing.T) {
+	setup, err := BuildRepoSetup(ManagerAPT, RepoConfig{}, testFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"the pinned key alone", fixture(t, "gpg-show-keys.txt"), true},
+		{"the pinned key and another", fixture(t, "gpg-show-keys-two.txt"), false},
+		{"the pinned key and one gpg marks invalid",
+			fixture(t, "gpg-show-keys-hidden.txt"), false},
+		{"another key", fixture(t, "gpg-show-keys-other.txt"), false},
+		{"another key and then the pinned one",
+			fixture(t, "gpg-show-keys-other.txt") + fixture(t, "gpg-show-keys.txt"), false},
+		{"no key", "gpg: no valid OpenPGP data found", false},
+		{"a fingerprint without a key", "fpr:::::::::" + testFingerprint + ":\n", false},
+	} {
+		if got := setup.Match(tc.out); got != tc.want {
+			t.Errorf("%s: Match = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	// A Setup carrying nothing but the fingerprint is how tools that copy
+	// the plan into their own type call it; the rule is the same.
+	bare := Setup{Fingerprint: testFingerprint}
+	if bare.Match(fixture(t, "gpg-show-keys-two.txt")) {
+		t.Errorf("a bare Setup matched a file carrying two keys")
+	}
+	if (Setup{}).Match(fixture(t, "gpg-show-keys.txt")) {
+		t.Errorf("a Setup without a fingerprint matched a key")
+	}
+}
+
+// TestRepoSetupRefusalLeavesNothingTrusted runs every manager's setup against
+// a model of the files each step writes, refuses the key at the check, and
+// asserts that nothing was written outside the staging directory and nothing
+// was imported: a refused key never sits where a repository configuration
+// would trust it. The accepted run is the control, showing the model does see
+// the trusted files when the key is the right one.
+func TestRepoSetupRefusalLeavesNothingTrusted(t *testing.T) {
+	for _, manager := range []Manager{ManagerAPT, ManagerDNF, ManagerPacman} {
+		setup, err := BuildRepoSetup(manager, RepoConfig{}, testFingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		staging := stagingDir(RepoConfig{}.normalize()) + "/"
+		for _, tc := range []struct {
+			name    string
+			out     string
+			refused bool
+		}{
+			{"two keys", fixture(t, "gpg-show-keys-two.txt"), true},
+			{"another key", fixture(t, "gpg-show-keys-other.txt"), true},
+			{"the pinned key", fixture(t, "gpg-show-keys.txt"), false},
+		} {
+			written, imported, stopped := simulateSetup(t, setup, tc.out)
+			if stopped != tc.refused {
+				t.Errorf("%s/%s: stopped = %v, want %v", manager, tc.name, stopped, tc.refused)
+				continue
+			}
+			if !tc.refused {
+				// apt trusts the keyring file it is pointed at; dnf and
+				// pacman trust what was imported.
+				trusted := len(imported)
+				for _, path := range written {
+					if !strings.HasPrefix(path, staging) {
+						trusted++
+					}
+				}
+				if trusted == 0 {
+					t.Errorf("%s/%s: the accepted key never left staging", manager, tc.name)
+				}
+				continue
+			}
+			if len(imported) != 0 {
+				t.Errorf("%s/%s: imported %q after a refusal", manager, tc.name, imported)
+			}
+			for _, path := range written {
+				if !strings.HasPrefix(path, staging) {
+					t.Errorf("%s/%s: %s was written before the key was checked",
+						manager, tc.name, path)
+				}
+			}
+		}
+	}
+}
+
+// simulateSetup walks the steps the way a caller does, stopping after the
+// verify step when Match refuses its output, and returns the files the steps
+// that ran would have written and the keys they would have imported. It reads
+// the argv shapes this package builds; an unknown privileged step fails the
+// test, so a new step cannot slip past the model.
+func simulateSetup(t *testing.T, setup Setup, verifyOut string) (written, imported []string, stopped bool) {
+	t.Helper()
+	for i, step := range setup.Steps {
+		a := step.Argv
+		switch {
+		case a[0] == "install" && len(a) >= 2 && a[1] == "-d":
+			// A directory is not a key.
+		case a[0] == "curl":
+			written = append(written, argAfter(t, a, "-o"))
+		case a[0] == "gpg" && hasArgv(a, "--show-keys"):
+		case a[0] == "gpg" && hasArgv(a, "--dearmor"):
+			written = append(written, argAfter(t, a, "-o"))
+		case a[0] == "install":
+			written = append(written, a[len(a)-1])
+		case a[0] == "chmod", a[0] == "rm":
+		case a[0] == "rpm" && hasArgv(a, "--import"),
+			a[0] == "pacman-key":
+			imported = append(imported, a[len(a)-1])
+		case a[0] == "tee":
+			written = append(written, a[len(a)-1])
+		case a[0] == "apt-get", a[0] == "dnf", a[0] == "pacman":
+		default:
+			t.Fatalf("the model does not know the step %q", argv(step))
+		}
+		if i == setup.Verify && !setup.Match(verifyOut) {
+			return written, imported, true
+		}
+	}
+	return written, imported, false
+}
+
+// argAfter returns the argument that follows a flag.
+func argAfter(t *testing.T, argv []string, flag string) string {
+	t.Helper()
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag {
+			return argv[i+1]
+		}
+	}
+	t.Fatalf("no %s in %q", flag, argv)
+	return ""
+}
+
+// hasArgv reports whether an argv carries an argument.
+func hasArgv(argv []string, want string) bool {
+	for _, arg := range argv {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }
 
 // fixtureFingerprintOutput is the gpg record carrying testFingerprint.
