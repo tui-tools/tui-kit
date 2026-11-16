@@ -21,15 +21,20 @@
 // writable by root alone, and so must every directory above it; a file that
 // is not stops the load with an error naming it. "~" is root's home from the
 // account database, never $HOME, so `sudo -E` cannot point the tool at the
-// invoking user's dotfiles. And inside a sudo session (SUDO_USER set) the
-// TUI_<TOOL>_* variables are refused: they come from the account that ran
-// sudo, through `sudo -E` or a policy that keeps them.
+// invoking user's dotfiles. And when root was reached from another account
+// the TUI_<TOOL>_* variables are refused: they come from that account, through
+// `sudo -E`, a sudoers policy that keeps them, or `su` without "-", which
+// keeps the whole environment. Such a session is recognised by SUDO_USER,
+// DOAS_USER or PKEXEC_UID, and otherwise by the kernel's login uid
+// (/proc/self/loginuid), which su and every other switch leave pointing at
+// the account that logged in.
 package config
 
 import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -53,7 +58,49 @@ var (
 		}
 		return u.HomeDir, nil
 	}
+	loginUID = readLoginUID
 )
+
+// unsetLoginUID is what /proc/self/loginuid holds for a process no login
+// started: a boot service, a container without audit, a CI runner.
+const unsetLoginUID = 4294967295
+
+// readLoginUID reads the audit login uid of this process. ok is false when it
+// cannot be read or was never set.
+func readLoginUID() (uid int, ok bool) {
+	raw, err := os.ReadFile("/proc/self/loginuid")
+	if err != nil {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 32)
+	// The upper bound also excludes the unset marker; a uid above it is not
+	// one a login is given, and int is only guaranteed 32 bits.
+	if err != nil || value == unsetLoginUID || value > math.MaxInt32 {
+		return 0, false
+	}
+	return int(value), true
+}
+
+// invokedBy names the account a root process was reached from, or "" when
+// root logged in as itself. The switch tools that say so are believed first;
+// the login uid catches the ones that do not (`su` keeps no such variable).
+func invokedBy() string {
+	for _, name := range []string{"SUDO_USER", "DOAS_USER"} {
+		if who := os.Getenv(name); who != "" {
+			return who
+		}
+	}
+	if uid := os.Getenv("PKEXEC_UID"); uid != "" {
+		return "uid " + uid
+	}
+	if uid, ok := loginUID(); ok && uid != 0 {
+		if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+			return u.Username
+		}
+		return "uid " + strconv.Itoa(uid)
+	}
+	return ""
+}
 
 // Keys every tool in the family shares. A tool is free to ignore them, but
 // when it supports the behaviour it must use these names.
@@ -188,9 +235,9 @@ func expandHome(path string, root bool) (string, error) {
 	return filepath.Join(home, strings.TrimPrefix(path, "~")), nil
 }
 
-// applyEnv overrides the declared keys from the environment. As root inside a
-// sudo session it refuses them instead: they belong to the account that ran
-// sudo, not to root.
+// applyEnv overrides the declared keys from the environment. As root reached
+// from another account (sudo, doas, pkexec, su) it refuses them instead: they
+// belong to that account, not to root.
 func (c *Config) applyEnv(opts Options, root bool) error {
 	prefix := opts.EnvPrefix
 	if prefix == "-" {
@@ -199,7 +246,10 @@ func (c *Config) applyEnv(opts Options, root bool) error {
 	if prefix == "" {
 		prefix = EnvPrefixFor(opts.Tool)
 	}
-	sudoUser := os.Getenv("SUDO_USER")
+	invoker := ""
+	if root {
+		invoker = invokedBy()
+	}
 	var refused []string
 	// Only declared keys are considered, so the environment cannot introduce
 	// a key the tool never asked for.
@@ -209,7 +259,7 @@ func (c *Config) applyEnv(opts Options, root bool) error {
 		if !ok {
 			continue
 		}
-		if root && sudoUser != "" {
+		if invoker != "" {
 			refused = append(refused, name)
 			continue
 		}
@@ -217,10 +267,10 @@ func (c *Config) applyEnv(opts Options, root bool) error {
 	}
 	if len(refused) > 0 {
 		sort.Strings(refused)
-		return fmt.Errorf("config: %s set in a sudo session started by %s; "+
+		return fmt.Errorf("config: %s set in a root session started by %s; "+
 			"running as root, the configuration is read from files root owns: "+
-			"unset it (sudo without -E), or put the key in %s",
-			strings.Join(refused, ", "), sudoUser, SystemPathFor(opts.Tool))
+			"unset it (sudo without -E, su with -), or put the key in %s",
+			strings.Join(refused, ", "), invoker, SystemPathFor(opts.Tool))
 	}
 	return nil
 }
