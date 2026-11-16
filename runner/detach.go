@@ -35,7 +35,7 @@ const stopTimeout = 5 * time.Second
 func (r *Runner) stopDetached(sudo *os.Process) error {
 	if leader, ok := detachedCommand(procRoot, sudo.Pid); ok {
 		killBin := "kill"
-		if path, err := exec.LookPath("kill"); err == nil {
+		if path, err := lookTrusted("kill", nil, ""); err == nil {
 			killBin = path
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), stopTimeout)
@@ -45,7 +45,7 @@ func (r *Runner) stopDetached(sudo *os.Process) error {
 		kill := exec.CommandContext(ctx, r.Privilege[0], args...) //nolint:gosec // argv is built here, never from a shell string
 		// In the TUI's session, like the command it stops, so sudo finds the
 		// same ticket.
-		kill.Env = append(os.Environ(), r.env...)
+		kill.Env = append(r.environ(true), r.env...)
 		if err := kill.Run(); err == nil {
 			return nil
 		}

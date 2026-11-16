@@ -12,6 +12,11 @@
 // configured prefix ("sudo -n") once at construction, so a tool that cannot
 // escalate says so at startup instead of failing halfway through a change.
 //
+// A command that runs as root, because the tool escalates or because it was
+// started as root, is resolved in the system directories and never on the
+// caller's PATH, the file must be root's (see lookTrusted), and it starts
+// from a minimal environment rather than the caller's (see trustedEnv).
+//
 // No command gets a terminal. Every command the Runner starts, read or
 // mutation, escalated or not, leads a session of its own with no controlling
 // terminal, so nothing it runs can prompt on a terminal hidden behind the TUI:
@@ -132,7 +137,8 @@ type Interface interface {
 type Options struct {
 	// Bin is the command name, as it appears in Command.Argv[0]. Required.
 	Bin string
-	// SearchPaths are absolute fallbacks tried when Bin is not on PATH.
+	// SearchPaths are absolute fallbacks tried when Bin is not on PATH, or,
+	// for a runner whose commands run as root, not in the system directories.
 	// Administrative tools commonly live in an sbin directory a non-root
 	// PATH does not carry.
 	SearchPaths []string
@@ -181,11 +187,20 @@ type Runner struct {
 
 	privilegedReads bool
 	env             []string
+	// root is set when the process itself runs as root, so every command
+	// does, escalated or not.
+	root bool
 }
 
 // Available reports whether a binary can be found, without building a Runner.
-// Backend selection uses it to tell "installed" from "usable".
+// Backend selection uses it to tell "installed" from "usable". As root it
+// answers what New would: only a trusted binary in the system directories or
+// the search paths counts.
 func Available(bin string, searchPaths ...string) bool {
+	if geteuid() == 0 {
+		_, err := lookTrusted(bin, searchPaths, "")
+		return err == nil
+	}
 	_, err := look(bin, searchPaths, "")
 	return err == nil
 }
@@ -213,7 +228,15 @@ func New(opts Options) (*Runner, error) {
 	if opts.Bin == "" {
 		return nil, fmt.Errorf("runner: Options.Bin is required")
 	}
-	bin, err := look(opts.Bin, opts.SearchPaths, opts.InstallHint)
+	root := geteuid() == 0
+	// The binary runs as root when the process is root or escalates, and is
+	// then resolved without the caller's PATH. A runner that never escalates
+	// runs it as the caller, who owns that PATH anyway.
+	resolve := look
+	if root || len(opts.SudoPrefix) > 0 {
+		resolve = lookTrusted
+	}
+	bin, err := resolve(opts.Bin, opts.SearchPaths, opts.InstallHint)
 	if err != nil {
 		return nil, err
 	}
@@ -238,28 +261,28 @@ func New(opts Options) (*Runner, error) {
 		MutationTimeout: max(opts.MutationTimeout, 0),
 		privilegedReads: privilegedReads,
 		env:             env,
+		root:            root,
 	}
 	// Running as root, or with escalation switched off, needs no prefix.
-	if os.Geteuid() == 0 || len(opts.SudoPrefix) == 0 {
+	if root || len(opts.SudoPrefix) == 0 {
 		return r, nil
 	}
-	resolved, err := exec.LookPath(opts.SudoPrefix[0])
+	// The escalation command and setsid(1) after it are resolved the same
+	// trusted way as the binary: a `sudo` on the caller's PATH is no more
+	// trustworthy than the command it would be handed.
+	resolved, err := lookTrusted(opts.SudoPrefix[0], nil, "")
 	if err != nil {
 		return nil, fmt.Errorf(
-			"%w: not running as root and %q was not found; re-run with sudo, "+
+			"%w: not running as root and %q cannot be used (%v); re-run with sudo, "+
 				"or use --demo to explore the UI",
-			ErrNotAvailable, opts.SudoPrefix[0])
+			ErrNotAvailable, opts.SudoPrefix[0], err)
 	}
 	r.Privilege = append([]string{resolved}, opts.SudoPrefix[1:]...)
-	if setsid, err := look("setsid", setsidPaths, ""); err == nil {
+	if setsid, err := lookTrusted("setsid", nil, ""); err == nil {
 		r.Detach = []string{setsid, "-w"}
 	}
 	return r, nil
 }
-
-// setsidPaths are where util-linux installs setsid(1), for a PATH without the
-// directory.
-var setsidPaths = []string{"/usr/bin/setsid", "/bin/setsid"}
 
 // Privileged reports whether commands are wrapped in an escalation prefix.
 func (r *Runner) Privileged() bool { return len(r.Privilege) > 0 }
@@ -369,7 +392,7 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
 		}
 		c.WaitDelay = MutationGrace
 	}
-	c.Env = append(os.Environ(), r.env...)
+	c.Env = append(r.environ(escalated), r.env...)
 	if !privileged || !r.Privileged() {
 		// Escalated, the variables travel through env(1) in the argv.
 		c.Env = append(c.Env, cmd.Env...)
@@ -388,6 +411,15 @@ func (r *Runner) exec(ctx context.Context, cmd Command, privileged bool,
 		return text, r.wrapErr(cmd, text, err, timeout)
 	}
 	return text, nil
+}
+
+// environ is the environment a command starts from: the caller's for a
+// command that runs as the caller, trustedEnv for one that runs as root.
+func (r *Runner) environ(escalated bool) []string {
+	if r.root || escalated {
+		return trustedEnv(r.root)
+	}
+	return os.Environ()
 }
 
 // wrapErr turns an exec failure into a message worth putting in a status line:
