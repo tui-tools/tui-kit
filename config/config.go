@@ -14,16 +14,45 @@
 // through Options.Defaults and reads them with String, Bool or Int, and an
 // unknown key in a file is ignored so a newer config never breaks an older
 // binary. Use Validate to reject the keys a tool does care about.
+//
+// A tool started as root holds its configuration to a stricter standard,
+// because what it reads decides what root runs (which smb.conf to manage,
+// which directory to create). Every file it reads must be owned by root and
+// writable by root alone, and so must every directory above it; a file that
+// is not stops the load with an error naming it. "~" is root's home from the
+// account database, never $HOME, so `sudo -E` cannot point the tool at the
+// invoking user's dotfiles. And inside a sudo session (SUDO_USER set) the
+// TUI_<TOOL>_* variables are refused: they come from the account that ran
+// sudo, through `sudo -E` or a policy that keeps them.
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/user"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/tui-tools/tui-kit/internal/kv"
+	"github.com/tui-tools/tui-kit/internal/trust"
+)
+
+// Hooks the tests replace: who the process runs as, how a file is checked
+// before root reads it, and where root's home is.
+var (
+	geteuid   = os.Geteuid
+	checkFile = trust.CheckFile
+	homeOf    = func(uid int) (string, error) {
+		u, err := user.LookupId(strconv.Itoa(uid))
+		if err != nil {
+			return "", err
+		}
+		return u.HomeDir, nil
+	}
 )
 
 // Keys every tool in the family shares. A tool is free to ignore them, but
@@ -102,15 +131,31 @@ func Load(opts Options) (Config, error) {
 
 // LoadFrom reads the given paths in order, each overriding the previous one,
 // and then applies the environment. A missing file is not an error; a
-// malformed one is reported with its line number.
+// malformed one is reported with its line number. As root, a file that root
+// alone does not control is an error too (see the package documentation).
 func LoadFrom(opts Options, paths ...string) (Config, error) {
 	cfg := Config{Tool: opts.Tool, Values: map[string]string{}}
 	for key, value := range opts.Defaults {
 		cfg.Values[key] = value
 	}
+	root := geteuid() == 0
 
 	for _, path := range paths {
-		keys, err := kv.ReadFile(path, true)
+		full, err := expandHome(path, root)
+		if err != nil {
+			return cfg, fmt.Errorf("config: %w", err)
+		}
+		if root {
+			if err := checkFile(full); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return cfg, fmt.Errorf("config: refusing %s: %w; running as root, "+
+					"a configuration file must be owned by root and writable by "+
+					"root alone, and so must every directory above it", full, err)
+			}
+		}
+		keys, err := kv.ReadFile(full, true)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -120,29 +165,64 @@ func LoadFrom(opts Options, paths ...string) (Config, error) {
 		for key, value := range keys {
 			cfg.Values[key] = value
 		}
-		cfg.Sources = append(cfg.Sources, kv.ExpandHome(path))
+		cfg.Sources = append(cfg.Sources, full)
 	}
 
-	cfg.applyEnv(opts)
+	if err := cfg.applyEnv(opts, root); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
 }
 
-// applyEnv overrides the declared keys from the environment.
-func (c *Config) applyEnv(opts Options) {
+// expandHome turns a leading "~" into a home directory: the caller's $HOME
+// normally, and as root the effective user's home from the account database,
+// because $HOME is whatever the invoking user had under `sudo -E`.
+func expandHome(path string, root bool) (string, error) {
+	if !root || (path != "~" && !strings.HasPrefix(path, "~/")) {
+		return kv.ExpandHome(path), nil
+	}
+	home, err := homeOf(geteuid())
+	if err != nil || home == "" {
+		return "", fmt.Errorf("cannot find root's home directory to expand %s", path)
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~")), nil
+}
+
+// applyEnv overrides the declared keys from the environment. As root inside a
+// sudo session it refuses them instead: they belong to the account that ran
+// sudo, not to root.
+func (c *Config) applyEnv(opts Options, root bool) error {
 	prefix := opts.EnvPrefix
 	if prefix == "-" {
-		return
+		return nil
 	}
 	if prefix == "" {
 		prefix = EnvPrefixFor(opts.Tool)
 	}
+	sudoUser := os.Getenv("SUDO_USER")
+	var refused []string
 	// Only declared keys are considered, so the environment cannot introduce
 	// a key the tool never asked for.
 	for key := range opts.Defaults {
-		if value, ok := os.LookupEnv(envName(prefix, key)); ok {
-			c.Values[key] = value
+		name := envName(prefix, key)
+		value, ok := os.LookupEnv(name)
+		if !ok {
+			continue
 		}
+		if root && sudoUser != "" {
+			refused = append(refused, name)
+			continue
+		}
+		c.Values[key] = value
 	}
+	if len(refused) > 0 {
+		sort.Strings(refused)
+		return fmt.Errorf("config: %s set in a sudo session started by %s; "+
+			"running as root, the configuration is read from files root owns: "+
+			"unset it (sudo without -E), or put the key in %s",
+			strings.Join(refused, ", "), sudoUser, SystemPathFor(opts.Tool))
+	}
+	return nil
 }
 
 // Set overrides one key, which is how a tool folds its command line in. It
