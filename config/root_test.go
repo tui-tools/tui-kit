@@ -14,9 +14,20 @@ import (
 // The file check stays the real one unless check is given.
 func asRoot(t *testing.T, home string, check func(string) error) {
 	t.Helper()
-	oldEUID, oldCheck, oldHome := geteuid, checkFile, homeOf
-	t.Cleanup(func() { geteuid, checkFile, homeOf = oldEUID, oldCheck, oldHome })
+	oldEUID, oldCheck, oldHome, oldLogin := geteuid, checkFile, homeOf, loginUID
+	t.Cleanup(func() {
+		geteuid, checkFile, homeOf, loginUID = oldEUID, oldCheck, oldHome, oldLogin
+	})
 	geteuid = func() int { return 0 }
+	// Root logged in as itself unless a test says otherwise: the login uid of
+	// the process running the tests is whoever ran them.
+	loginUID = func() (int, bool) { return 0, true }
+	for _, name := range []string{"DOAS_USER", "PKEXEC_UID"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if check != nil {
 		checkFile = check
 	}
@@ -144,5 +155,82 @@ func TestUnprivilegedLoadIsUnchanged(t *testing.T) {
 	}
 	if cfg.String("backend", "") != "nftables" || cfg.Theme() != "/x" {
 		t.Errorf("values = %v", cfg.Values)
+	}
+}
+
+// TestRootReachedWithoutSudoRefusesTheEnvironment covers the other ways into
+// root that keep the caller's variables: `su` without "-" (seen only through
+// the login uid), doas and pkexec. Root's own login, and a process no login
+// started (login uid unset), keep them.
+func TestRootReachedWithoutSudoRefusesTheEnvironment(t *testing.T) {
+	o := opts()
+	o.EnvPrefix = ""
+	cases := []struct {
+		name    string
+		env     map[string]string
+		login   int
+		loginOK bool
+		refused bool
+	}{
+		{"su without -", nil, 1000, true, true},
+		{"doas", map[string]string{"DOAS_USER": "u"}, 0, true, true},
+		{"pkexec", map[string]string{"PKEXEC_UID": "1000"}, 0, true, true},
+		{"root login", nil, 0, true, false},
+		{"no login (service, container)", nil, 0, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TUI_FIREWALL_SUDO", "/home/u/evil")
+			t.Setenv("SUDO_USER", "")
+			if err := os.Unsetenv("SUDO_USER"); err != nil {
+				t.Fatal(err)
+			}
+			asRoot(t, t.TempDir(), func(string) error { return nil })
+			loginUID = func() (int, bool) { return tc.login, tc.loginOK }
+			for name, value := range tc.env {
+				t.Setenv(name, value)
+			}
+			cfg, err := LoadFrom(o)
+			if tc.refused {
+				if err == nil {
+					t.Fatalf("accepted the environment: %v", cfg.Values)
+				}
+				if !strings.Contains(err.Error(), "TUI_FIREWALL_SUDO") ||
+					strings.Contains(err.Error(), "/home/u/evil") {
+					t.Errorf("message = %v", err)
+				}
+				return
+			}
+			if err != nil || cfg.String(KeySudo, "") != "/home/u/evil" {
+				t.Errorf("root's own environment = %v, %v", cfg.Values, err)
+			}
+		})
+	}
+}
+
+// TestUnprivilegedIgnoresTheLoginUID: an ordinary user's login uid is never 0,
+// and that must not cost it its own environment.
+func TestUnprivilegedIgnoresTheLoginUID(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root")
+	}
+	old := loginUID
+	t.Cleanup(func() { loginUID = old })
+	loginUID = func() (int, bool) { return 1000, true }
+	o := opts()
+	o.EnvPrefix = ""
+	t.Setenv("TUI_FIREWALL_THEME", "/x")
+	cfg, err := LoadFrom(o)
+	if err != nil || cfg.Theme() != "/x" {
+		t.Errorf("values = %v, %v", cfg.Values, err)
+	}
+}
+
+// TestReadLoginUID parses this process's own login uid without failing on a
+// machine where it is unset or missing.
+func TestReadLoginUID(t *testing.T) {
+	uid, ok := readLoginUID()
+	if ok && (uid < 0 || uid == unsetLoginUID) {
+		t.Errorf("readLoginUID = %d, %v", uid, ok)
 	}
 }

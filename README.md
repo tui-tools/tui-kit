@@ -213,9 +213,13 @@ because what it reads decides what root runs:
   naming the file;
 - `~` is root's home from the account database, never `$HOME`, so `sudo -E`
   does not point it at the invoking user's `~/.config`;
-- inside a sudo session (`SUDO_USER` set), a `TUI_<TOOL>_<KEY>` variable is an
-  error rather than a setting: it came from the account that ran sudo. Put the
-  key in `/etc/<tool>/config.toml` instead.
+- when root was reached from another account, a `TUI_<TOOL>_<KEY>` variable is
+  an error rather than a setting: it came from that account. This covers sudo
+  (`SUDO_USER`), doas (`DOAS_USER`), pkexec (`PKEXEC_UID`) and `su` without
+  `-`, which sets none of them and is recognised by the kernel's login uid
+  (`/proc/self/loginuid` names a non-root account). Root's own login, and a
+  process no login started (a service, most containers), keep the variables.
+  Put the key in `/etc/<tool>/config.toml` instead.
 
 ## Packages: `pkgmgr`
 
