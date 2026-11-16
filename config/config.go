@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -72,7 +73,9 @@ func readLoginUID() (uid int, ok bool) {
 		return 0, false
 	}
 	value, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 32)
-	if err != nil || value == unsetLoginUID {
+	// The upper bound also excludes the unset marker; a uid above it is not
+	// one a login is given, and int is only guaranteed 32 bits.
+	if err != nil || value == unsetLoginUID || value > math.MaxInt32 {
 		return 0, false
 	}
 	return int(value), true
