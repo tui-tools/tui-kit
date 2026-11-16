@@ -102,6 +102,16 @@ reads, and runs in a shell, as the same argv the runner executes.
 Reads go through `Read`, which escalates only when the tool says its reads need
 it: `ufw status` does, `systemctl list-units` does not.
 
+A command that runs as root, because the tool escalates or because it was
+started as root, never comes from the caller's PATH. The binary, sudo and
+setsid(1) are looked up in `/usr/local/sbin`, `/usr/local/bin`, `/usr/sbin`,
+`/usr/bin`, `/sbin` and `/bin`, then in the tool's own `SearchPaths`, and the
+file found must be owned by root and writable by root alone, as must every
+directory above it. A file that fails that check stops the runner with an
+error naming it. Such a command also starts from a minimal environment (a PATH
+of those directories, root's HOME when the tool runs as root, `TZ`, and the
+runner's own `LANG=C`), not from the caller's.
+
 Reads and mutations are timed differently. A read is bounded by
 `Options.Timeout` (default `runner.DefaultTimeout`, 15 s), so a stuck query
 cannot freeze the UI. A mutation (`Run`) has no wall-clock timeout unless the
@@ -195,6 +205,18 @@ Values stay untyped strings, read back with `String`, `Bool` or `Int`. An
 unknown key in a file is kept but ignored, so a newer config never breaks an
 older binary; `cfg.OneOf` rejects the values a tool does care about.
 
+Started as root, a tool is stricter about where its configuration comes from,
+because what it reads decides what root runs:
+
+- every file it reads must be owned by root and writable by root alone, and so
+  must every directory above it; one that is not stops the load with an error
+  naming the file;
+- `~` is root's home from the account database, never `$HOME`, so `sudo -E`
+  does not point it at the invoking user's `~/.config`;
+- inside a sudo session (`SUDO_USER` set), a `TUI_<TOOL>_<KEY>` variable is an
+  error rather than a setting: it came from the account that ran sudo. Put the
+  key in `/etc/<tool>/config.toml` instead.
+
 ## Packages: `pkgmgr`
 
 `pkgmgr` is what a launcher needs to know about the machine it was started on:
@@ -273,7 +295,14 @@ The contract, in short:
   directory under `/run`, and copied to where the manager trusts keys from only
   after the check, so a refused key is never left there. The fingerprint is never
   compiled in — one that lives in a library is one that cannot be rotated
-  without a release.
+  without a release. On dnf the checked key goes to the rpm database
+  (`rpm --import`) and also to the keyring dnf checks the index signature
+  against, which dnf fills only when its import question is answered: the last
+  step, `dnf -q -y --repo tui-tools --setopt=tui-tools.skip_if_unavailable=0
+  makecache`, answers it for this repository alone, whose `.repo` names only
+  the checked local file, and fails if the index does not verify. dnf5 on
+  Fedora 44 otherwise skips the repository and still exits 0. A plain refresh
+  (`BuildRefresh`) never carries `-y`.
 - **Exec.** Nothing in `pkgmgr` starts a process. Every command is executed by
   `runner`, which is the family's sanctioned exec site, so `check-exec.sh` stays
   satisfied without a tool having to wrap this package in an `internal/` of its
