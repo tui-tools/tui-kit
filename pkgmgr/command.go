@@ -761,6 +761,16 @@ func setupAPT(repo RepoConfig, fpr string) Setup {
 // setupDNF mirrors install.sh's dnf path, with the .repo file written from
 // the known fields rather than downloaded: the file that says which key to
 // trust should not itself arrive over the network.
+//
+// The key is trusted twice, because dnf keeps two keyrings. `rpm --import`
+// puts it in the rpm database, which checks package signatures. The index
+// signature (repo_gpgcheck) is checked against a keyring dnf keeps per
+// repository, and dnf only fills that one by asking on the terminal. With
+// nobody to answer (no terminal, or `-q` without `-y`), dnf5 on Fedora 44
+// declines, reports the index signature as failed, skips the repository and
+// still exits 0, so the setup looked done while the repository was unusable.
+// The last step therefore answers that question for this repository alone
+// (see importRepoKey).
 func setupDNF(repo RepoConfig, fpr string) Setup {
 	key := DNFKeyDir + "/RPM-GPG-KEY-" + repo.Name
 	body := fmt.Sprintf(`[%s]
@@ -775,7 +785,6 @@ repo_gpgcheck=1
 gpgkey=file://%s
 metadata_expire=1h
 `, repo.Name, repo.Name, repo.URL, key)
-	refresh, _ := BuildRefresh(ManagerDNF)
 	return Setup{
 		Verify:      3,
 		Fingerprint: fpr,
@@ -798,8 +807,32 @@ metadata_expire=1h
 			writeFile(DNFReposDir+"/"+repo.Name+".repo", body,
 				"Add the repository, with both the packages and the index "+
 					"signature checked"),
-			refresh,
+			importRepoKey(repo, fpr),
 		},
+	}
+}
+
+// importRepoKey is the refresh that ends the dnf setup. It loads this
+// repository alone (--repo), so the `-y` answers one question only: whether
+// to trust, for its index, the key its .repo file names. That is the file
+// written a step earlier from the key checked against the pinned fingerprint,
+// in a root-owned directory; no other repository's key is ever offered. A
+// general refresh (BuildRefresh) never carries `-y`, so it cannot trust a key
+// on anyone's behalf.
+//
+// skip_if_unavailable=0, for this command only, makes a key that could not be
+// imported or an index that does not verify fail the step instead of being
+// skipped with exit status 0. The .repo file keeps dnf's default, so an
+// unreachable repository does not break every later dnf run on the machine.
+func importRepoKey(repo RepoConfig, fpr string) Command {
+	return Command{
+		Argv: []string{
+			"dnf", "-q", "-y", "--repo", repo.Name,
+			"--setopt=" + repo.Name + ".skip_if_unavailable=0", "makecache",
+		},
+		Privileged: true,
+		Explain: "Load the repository's index, trusting for it only the checked key " +
+			fpr + "; fail if the key is not imported or the index does not verify",
 	}
 }
 

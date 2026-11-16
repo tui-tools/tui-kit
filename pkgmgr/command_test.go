@@ -324,11 +324,83 @@ func TestRepoSetupPinsTheKey(t *testing.T) {
 			t.Errorf("%s matched a different key", manager)
 		}
 		// The last step refreshes, so a package can be installed right after.
+		// dnf's is the scoped one that also imports the index key
+		// (TestDNFSetupImportsTheIndexKey).
 		last := setup.Steps[len(setup.Steps)-1]
 		refresh, _ := BuildRefresh(manager)
+		if manager == ManagerDNF {
+			refresh = importRepoKey(RepoConfig{}.normalize(), testFingerprint)
+		}
 		if argv(last) != argv(refresh) {
 			t.Errorf("%s ends with %q, want the refresh %q",
 				manager, argv(last), argv(refresh))
+		}
+	}
+}
+
+// TestDNFSetupImportsTheIndexKey: dnf keeps the key that checks the index
+// signature in a keyring of its own, which `rpm --import` does not reach and
+// which dnf only fills when its question is answered. dnf5 on Fedora 44
+// declines without an answer, skips the repository and exits 0. The setup
+// answers it for this repository alone, after the key was checked, imported
+// into rpm and named by the .repo file, and makes a refusal fail the step.
+func TestDNFSetupImportsTheIndexKey(t *testing.T) {
+	setup, err := BuildRepoSetup(ManagerDNF, RepoConfig{}, testFingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := func(want string) int {
+		for i, step := range setup.Steps {
+			if argv(step) == want {
+				return i
+			}
+		}
+		t.Fatalf("no step %q in %v", want, setupArgv(setup))
+		return -1
+	}
+	key := "/etc/pki/rpm-gpg/RPM-GPG-KEY-tui-tools"
+	placed := index("install -m 0644 " + stagedKey(RepoConfig{}.normalize()) + " " + key)
+	rpmImport := index("rpm --import " + key)
+	repoFile := index("tee /etc/yum.repos.d/tui-tools.repo")
+	last := len(setup.Steps) - 1
+	load := setup.Steps[last]
+	if argv(load) != "dnf -q -y --repo tui-tools "+
+		"--setopt=tui-tools.skip_if_unavailable=0 makecache" {
+		t.Errorf("dnf setup ends with %q", argv(load))
+	}
+	if !load.Privileged {
+		t.Error("the index key import is not privileged")
+	}
+	if setup.Verify >= placed || placed >= rpmImport || rpmImport >= repoFile ||
+		repoFile >= last {
+		t.Errorf("order: verify %d, place %d, rpm --import %d, .repo %d, dnf %d",
+			setup.Verify, placed, rpmImport, repoFile, last)
+	}
+	// The key dnf is allowed to take is the checked local copy, nothing
+	// fetched: the .repo names it by file://.
+	if !strings.Contains(setup.Steps[repoFile].Stdin, "\ngpgkey=file://"+key+"\n") {
+		t.Errorf(".repo does not name the checked key:\n%s", setup.Steps[repoFile].Stdin)
+	}
+	// The repository file keeps dnf's own skip_if_unavailable: only the
+	// setup's own refresh fails hard.
+	if strings.Contains(setup.Steps[repoFile].Stdin, "skip_if_unavailable") {
+		t.Errorf(".repo sets skip_if_unavailable:\n%s", setup.Steps[repoFile].Stdin)
+	}
+}
+
+// TestGeneralRefreshNeverAnswersForTheUser: `-y` on a refresh of every
+// repository would trust whatever key any of them names. Only the setup's
+// scoped refresh carries it.
+func TestGeneralRefreshNeverAnswersForTheUser(t *testing.T) {
+	for _, manager := range []Manager{ManagerAPT, ManagerDNF, ManagerPacman} {
+		refresh, err := BuildRefresh(manager)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, arg := range refresh.Argv {
+			if arg == "-y" || arg == "--assumeyes" {
+				t.Errorf("%s refresh = %q", manager, argv(refresh))
+			}
 		}
 	}
 }
