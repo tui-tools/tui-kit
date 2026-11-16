@@ -76,29 +76,60 @@ CHANNELS = [
 SITE_URL = "https://tui.tools"
 SETUP_URL = f"{SITE_URL}/install/"
 
+# The family's repository signing key, pinned the way pkgs/install.sh pins it
+# (KEY_FPR there). The manual setup below checks the downloaded key against
+# it before anything trusts the key, so the by-hand path is no weaker than the
+# one-liner. A new key means a new value here, as it means a new install.sh;
+# --fingerprint overrides it for a locally built repository.
+KEY_FINGERPRINT = "767CFB337B01F32FFC073F3F389120B277E4FB44"
+
+# Download the key and check it: exactly one primary key, and its fingerprint
+# the pinned one, which is what install.sh accepts. On a mismatch the file is
+# removed, so a reader who pastes the whole block anyway has nothing for the
+# following steps to import and the package manager refuses the repository.
+# `{fpr}` is the pinned fingerprint.
+KEY_CHECK = """k="$(mktemp -d)/tui-tools.asc"
+curl -fsSL --proto =https --tlsv1.2 -o "$k" {repo}/pubkey.asc
+# Go on only if this prints "key OK": one key, fingerprint {fpr}.
+[ "$(gpg --show-keys --with-colons "$k" \\
+  | awk -F: '$1 == "pub" {{ p = 1; next }} p && $1 == "fpr" {{ print $10; p = 0 }}')" \\
+  = {fpr} ] && echo "key OK" || {{ echo "WRONG KEY: stop here"; rm -f "$k"; }}"""
+
 # The one-time repository setup, by hand, per package manager. `{repo}` is the
-# manifest's `install.repo_url`. These are printed next to the one-liner
-# because a family whose promise is "preview before you run" cannot only offer
-# `curl … | sh`: the reader who wants to see every command gets them here.
+# manifest's `install.repo_url` and `{fpr}` the pinned key fingerprint. These
+# are printed next to the one-liner because a family whose promise is "preview
+# before you run" cannot only offer `curl | sh`: the reader who wants to see
+# every command gets them here.
 #
-# The commands are deliberately plain: fetch the public key, put it where the
-# package manager looks for repository keys, point the manager at the
-# repository, refresh. Nothing is executed to produce them, so the rendered
-# README is the same on every machine.
+# Each one starts with KEY_CHECK and only then hands the checked file to the
+# package manager. The dnf one writes the .repo file itself, naming the
+# checked local key, rather than downloading a file that names a key URL: the
+# file that says which key to trust should not arrive over the network.
+# Nothing is executed to produce them, so the rendered README is the same on
+# every machine.
 MANUAL_SETUP = {
-    "apt": """sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL {repo}/pubkey.asc \\
-  | sudo gpg --dearmor -o /etc/apt/keyrings/tui-tools.gpg
+    "apt": KEY_CHECK
+    + """
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/tui-tools.gpg "$k"
 echo "deb [signed-by=/etc/apt/keyrings/tui-tools.gpg] {repo}/deb stable main" \\
   | sudo tee /etc/apt/sources.list.d/tui-tools.list
 sudo apt update""",
-    "dnf": """sudo rpm --import {repo}/pubkey.asc
-sudo curl -fsSL -o /etc/yum.repos.d/tui-tools.repo {repo}/rpm/tui-tools.repo
-sudo dnf makecache""",
-    "pacman": """curl -fsSL -o /tmp/tui-tools.asc {repo}/pubkey.asc
-sudo pacman-key --add /tmp/tui-tools.asc
-sudo pacman-key --lsign-key \\
-  "$(gpg --show-keys --with-colons /tmp/tui-tools.asc | awk -F: '/^fpr:/{{print $10; exit}}')"
+    "dnf": KEY_CHECK
+    + """
+sudo install -d -m 0755 /etc/pki/rpm-gpg
+sudo install -m 0644 "$k" /etc/pki/rpm-gpg/RPM-GPG-KEY-tui-tools
+sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-tui-tools
+printf '%s\\n' '[tui-tools]' 'name=tui-tools' 'baseurl={repo}/rpm/$basearch' \\
+  'enabled=1' 'gpgcheck=1' 'repo_gpgcheck=1' \\
+  'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-tui-tools' 'metadata_expire=1h' \\
+  | sudo tee /etc/yum.repos.d/tui-tools.repo
+# dnf asks to import the key for the index: answer y if it shows {fpr}.
+sudo dnf makecache --repo tui-tools""",
+    "pacman": KEY_CHECK
+    + """
+sudo pacman-key --add "$k"
+sudo pacman-key --lsign-key {fpr}
 printf '[tui-tools]\\nServer = {repo}/arch/$arch\\n' \\
   | sudo tee -a /etc/pacman.conf
 sudo pacman -Sy""",
@@ -132,7 +163,9 @@ def expand(text: str, version: str | None, arch: str) -> str:
     return text.replace("{arch}", arch)
 
 
-def render(manifest: dict, version: str | None, arch: str) -> str:
+def render(
+    manifest: dict, version: str | None, arch: str, fingerprint: str = KEY_FINGERPRINT
+) -> str:
     """Build the markdown that sits between the two markers."""
     install = manifest.get("install", {})
     name = manifest["name"]
@@ -189,7 +222,9 @@ def render(manifest: dict, version: str | None, arch: str) -> str:
                 )
                 lines.append("")
                 lines.append("```sh")
-                lines.extend(manual.format(repo=repo_url).split("\n"))
+                lines.extend(
+                    manual.format(repo=repo_url, fpr=fingerprint).split("\n")
+                )
                 lines.append("```")
                 lines.append("")
                 lines.extend(wrap("Then, and for every other tool in the family:"))
@@ -377,6 +412,12 @@ def main() -> int:
         help="architecture to expand {arch} with in the README (default: amd64)",
     )
     parser.add_argument(
+        "--fingerprint",
+        default=KEY_FINGERPRINT,
+        help="repository key fingerprint the manual setup checks "
+        "(default: the family's signing key)",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="do not write; exit non-zero when the README is out of date",
@@ -385,7 +426,11 @@ def main() -> int:
 
     manifest = json.loads(args.manifest.read_text())
     version = args.version or latest_version(args.manifest.resolve().parent)
-    body = render(manifest, version, args.arch)
+    fingerprint = re.sub(r"\s+", "", args.fingerprint).upper()
+    if not re.fullmatch(r"[0-9A-F]{40}", fingerprint):
+        print("--fingerprint: 40 hexadecimal digits", file=sys.stderr)
+        return 2
+    body = render(manifest, version, args.arch, fingerprint)
 
     errors = stability_errors(manifest)
     if errors:

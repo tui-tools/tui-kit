@@ -209,6 +209,7 @@ func TestRunPassesTheEnvironment(t *testing.T) {
 	sudoDir := fakeBin(t, "sudo", `shift; exec /usr/bin/env -i PATH=/usr/bin:/bin "$@"`)
 	t.Setenv("PATH", dir+":"+sudoDir+":/usr/bin:/bin")
 	t.Setenv("DEBIAN_FRONTEND", "")
+	trustPath(t)
 	cmd := Command{Argv: []string{"toolctl", "install"},
 		Env: []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"}}
 

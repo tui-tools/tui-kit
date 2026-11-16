@@ -203,5 +203,120 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
 
 
+REPO = "https://pkgs.tui.tools"
+PINNED = renderer.KEY_FINGERPRINT
+OTHER = "AAAABBBBCCCCDDDDEEEEFFFF0000111122223333"
+
+
+def repo_manifest() -> dict:
+    """A manifest with every repository channel, so every manual setup renders."""
+    channel = {"available": True, "requires_repo_setup": True}
+    return {
+        "name": "tui-example",
+        "install": {
+            "repo_url": REPO,
+            "apt": dict(channel, command="sudo apt install tui-example"),
+            "dnf": dict(channel, command="sudo dnf install tui-example"),
+            "pacman": dict(channel, command="sudo pacman -S tui-example"),
+        },
+    }
+
+
+def colons(*fingerprints: str) -> str:
+    """What `gpg --show-keys --with-colons` prints for these primary keys,
+    each with a subkey whose fingerprint must not be taken for a primary."""
+    out = []
+    for fpr in fingerprints:
+        out += [
+            "pub:-:255:22:0A1B2C3D4E5F6071:1756512000:::-:::scESC:::::ed25519:::0:",
+            f"fpr:::::::::{fpr}:",
+            "uid:-::::1756512000::X::tui-tools package signing::::::::::0:",
+            "sub:-:255:18:1122334455667788:1756512000::::::e:::::cv25519::",
+            f"fpr:::::::::{OTHER}:",
+        ]
+    return "\n".join(out) + "\n"
+
+
+class ManualSetupTest(unittest.TestCase):
+    """The by-hand repository setup checks the key the way install.sh does."""
+
+    def test_every_manual_setup_checks_the_pinned_key_first(self):
+        body = renderer.render(repo_manifest(), "0.4.0", "amd64")
+        for key in ("apt", "dnf", "pacman"):
+            manual = renderer.MANUAL_SETUP[key].format(repo=REPO, fpr=PINNED)
+            self.assertIn(manual, body)
+            lines = manual.split("\n")
+            check = next(i for i, l in enumerate(lines) if "echo \"key OK\"" in l)
+            trusts = [
+                i for i, l in enumerate(lines)
+                if "--dearmor" in l or "rpm --import" in l or "pacman-key" in l
+            ]
+            self.assertTrue(trusts, key)
+            self.assertLess(check, min(trusts), f"{key} trusts the key before checking it")
+
+    def test_dnf_writes_the_repo_file_naming_the_checked_key(self):
+        manual = renderer.MANUAL_SETUP["dnf"].format(repo=REPO, fpr=PINNED)
+        self.assertNotIn("tui-tools.repo " + REPO, manual)
+        self.assertNotIn(REPO + "/rpm/tui-tools.repo", manual)
+        self.assertIn("'gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-tui-tools'", manual)
+        self.assertIn("'repo_gpgcheck=1'", manual)
+        # The reader answers dnf's question; the manual never answers it for them.
+        self.assertNotIn(" -y", manual)
+
+    def test_pacman_signs_the_pinned_fingerprint_not_one_read_from_the_file(self):
+        manual = renderer.MANUAL_SETUP["pacman"].format(repo=REPO, fpr=PINNED)
+        self.assertIn(f"sudo pacman-key --lsign-key {PINNED}", manual)
+
+    def test_a_fingerprint_override_reaches_the_readme(self):
+        body = renderer.render(repo_manifest(), "0.4.0", "amd64", OTHER)
+        self.assertIn(f"= {OTHER} ]", body)
+        self.assertNotIn(PINNED, body)
+
+    def run_check(self, served: str) -> tuple[str, bool]:
+        """Run the key check for real, with curl and gpg stubbed: curl
+        "downloads" the colon listing, gpg prints the file it is shown."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            stubs = root / "bin"
+            stubs.mkdir()
+            served_file = root / "served"
+            served_file.write_text(served)
+            (stubs / "curl").write_text(
+                '#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done\n'
+                f'cp "{served_file}" "$2"\n'
+            )
+            (stubs / "gpg").write_text('#!/bin/sh\nfor a; do f="$a"; done\ncat "$f"\n')
+            for stub in stubs.iterdir():
+                stub.chmod(0o755)
+            script = renderer.KEY_CHECK.format(repo=REPO, fpr=PINNED)
+            script += '\n[ -e "$k" ] && echo "kept" || echo "removed"\n'
+            env = dict(os.environ, PATH=f"{stubs}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                       TMPDIR=str(root))
+            result = subprocess.run(["sh", "-c", script], capture_output=True,
+                                    text=True, env=env, check=True)
+            return result.stdout, "kept" in result.stdout
+
+    def test_the_check_accepts_the_pinned_key_alone(self):
+        out, kept = self.run_check(colons(PINNED))
+        self.assertIn("key OK", out)
+        self.assertTrue(kept)
+
+    def test_the_check_refuses_another_key_and_removes_it(self):
+        out, kept = self.run_check(colons(OTHER))
+        self.assertIn("WRONG KEY", out)
+        self.assertFalse(kept)
+
+    def test_the_check_refuses_the_pinned_key_with_another(self):
+        for served in (colons(PINNED, OTHER), colons(OTHER, PINNED)):
+            out, kept = self.run_check(served)
+            self.assertIn("WRONG KEY", out)
+            self.assertFalse(kept)
+
+    def test_the_check_refuses_a_file_that_is_no_key(self):
+        out, kept = self.run_check("gpg: no valid OpenPGP data found\n")
+        self.assertIn("WRONG KEY", out)
+        self.assertFalse(kept)
+
+
 if __name__ == "__main__":
     unittest.main()

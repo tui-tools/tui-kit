@@ -74,6 +74,7 @@ func TestNewResolvesSetsidOnlyWhenEscalating(t *testing.T) {
 	}
 	dir := fakeBin(t, "toolctl", "true")
 	t.Setenv("PATH", dir+":"+filepath.Dir(fakeSudo(t))+":"+filepath.Dir(setsid))
+	trustPath(t)
 	r, err := New(Options{Bin: "toolctl", SudoPrefix: []string{"sudo", "-n"}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
